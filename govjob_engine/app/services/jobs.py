@@ -141,6 +141,201 @@ def extract_cutoff(deterministic: dict | None, llm: dict | None) -> Any:
     return None
 
 
+
+
+def build_age_relaxation_summary(
+    age_policy: dict | None,
+    age_policy_llm_fallback: dict | None,
+) -> dict | None:
+    """Structured age-relaxation table for the student UI.
+
+    Prefer deterministic age_policy; fall back to age_policy_llm_fallback.
+    Returns None when nothing usable was extracted (UI shows honest missing copy).
+    entries: list of {category, years?, max_age?, min_age?} — never invents.
+    """
+    policy = age_policy if isinstance(age_policy, dict) else None
+    fb = age_policy_llm_fallback if isinstance(age_policy_llm_fallback, dict) else None
+
+    # Prefer deterministic when it has min/max or relaxations.
+    use = None
+    if policy:
+        has_range = policy.get("min_age") is not None or policy.get("max_age") is not None
+        has_rel = bool(policy.get("relaxations"))
+        has_caps = bool(policy.get("category_caps"))
+        if has_range or has_rel or has_caps:
+            use = policy
+    if use is None and fb:
+        has_range = fb.get("min_age") is not None or fb.get("max_age") is not None
+        has_rel = bool(fb.get("relaxations"))
+        has_caps = bool(fb.get("category_caps"))
+        if has_range or has_rel or has_caps:
+            use = fb
+    if use is None:
+        return None
+
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for r in use.get("relaxations") or []:
+        if not isinstance(r, dict):
+            continue
+        cat = r.get("category")
+        if not cat:
+            continue
+        key = f"rel:{cat}"
+        if key in seen:
+            continue
+        seen.add(key)
+        item: dict[str, Any] = {"category": cat}
+        if r.get("years") is not None:
+            item["years"] = r["years"]
+        if r.get("max_age") is not None:
+            item["max_age"] = r["max_age"]
+        if r.get("min_age") is not None:
+            item["min_age"] = r["min_age"]
+        entries.append(item)
+
+    caps = use.get("category_caps") or {}
+    if isinstance(caps, dict):
+        for cat, max_age in caps.items():
+            if not cat or max_age is None:
+                continue
+            key = f"cap:{cat}"
+            if key in seen or f"rel:{cat}" in seen:
+                # Still add max_age onto existing entry if only years was set.
+                for e in entries:
+                    if e.get("category") == cat and "max_age" not in e:
+                        e["max_age"] = max_age
+                continue
+            seen.add(key)
+            entries.append({"category": cat, "max_age": max_age})
+
+    return {
+        "as_on_date": use.get("as_on_date"),
+        "min_age": use.get("min_age"),
+        "max_age": use.get("max_age"),
+        "entries": entries,
+        "source": use.get("source") or ("deterministic" if use is policy else "llm_only"),
+    }
+
+
+def _normalize_tokens(text: str | None) -> set[str]:
+    if not text:
+        return set()
+    raw = re.sub(r"[^a-z0-9\s]+", " ", text.lower())
+    stop = {
+        "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "by",
+        "services", "service", "recruitment", "notification", "combined",
+        "general", "post", "posts", "vacancy", "vacancies", "exam",
+        "examination", "online", "application", "applications",
+    }
+    return {t for t in raw.split() if len(t) > 2 and t not in stop}
+
+
+def titles_similar(a: str | None, b: str | None) -> bool:
+    """Conservative title overlap: share >=2 significant tokens, or one contains the other."""
+    if not a or not b:
+        return False
+    ta, tb = a.strip().lower(), b.strip().lower()
+    if ta == tb:
+        return True
+    if ta in tb or tb in ta:
+        return len(ta) >= 12 and len(tb) >= 12
+    sa, sb = _normalize_tokens(a), _normalize_tokens(b)
+    if not sa or not sb:
+        return False
+    overlap = sa & sb
+    return len(overlap) >= 2
+
+
+def recruitment_keys_related(a: str | None, b: str | None) -> bool:
+    """Same key ignoring trailing :YEAR suffix (e.g. demo:DEMO-OPEN-2:2026)."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+
+    def base(k: str) -> str:
+        parts = k.rsplit(":", 1)
+        if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 4:
+            return parts[0]
+        return k
+
+    return base(a) == base(b)
+
+
+def _approx_year_prior(
+    current_year: int | None,
+    prior_year: int | None,
+    current_end: date | None,
+    prior_end: date | None,
+) -> bool:
+    """True if prior is year-1 or closed ~12 months earlier (±2 months)."""
+    if current_year is not None and prior_year is not None:
+        if prior_year == current_year - 1:
+            return True
+    if current_end is not None and prior_end is not None:
+        delta = (current_end - prior_end).days
+        if 300 <= delta <= 430:  # ~10–14 months
+            return True
+    return False
+
+
+def find_prior_cutoff(
+    current: dict,
+    candidates: list[dict],
+) -> dict | None:
+    """Find a conservative prior-year cutoff match among other approved jobs.
+
+    Requires: same source, year-1 or ~12mo earlier close, AND
+    (related recruitment_key OR similar title OR same non-empty department
+    with title overlap). Never invents marks — prior must already have cutoff.
+    """
+    src = current.get("source")
+    if not src:
+        return None
+    cur_id = current.get("id")
+    cur_year = current.get("year")
+    cur_end = parse_flexible_date(current.get("application_end"))
+    cur_title = current.get("title")
+    cur_dept = (current.get("department") or "").strip() or None
+    cur_key = current.get("recruitment_key")
+
+    best: dict | None = None
+    for c in candidates:
+        if c.get("id") == cur_id:
+            continue
+        if c.get("source") != src:
+            continue
+        if c.get("cutoff") is None or c.get("cutoff") == "":
+            continue
+        if not _approx_year_prior(
+            cur_year, c.get("year"),
+            cur_end, parse_flexible_date(c.get("application_end")),
+        ):
+            continue
+
+        related = recruitment_keys_related(cur_key, c.get("recruitment_key"))
+        title_ok = titles_similar(cur_title, c.get("title"))
+        # Conservative: related recruitment_key OR similar title.
+        # Same department alone is too loose (many unrelated posts share a board).
+        if not (related or title_ok):
+            continue
+
+        cand = {
+            "year": c.get("year"),
+            "notification_id": c.get("id"),
+            "title": c.get("title"),
+            "cutoff": c.get("cutoff"),
+        }
+        # Prefer exact year-1 over approximate window if both exist.
+        if best is None:
+            best = cand
+        elif cur_year and cand.get("year") == cur_year - 1:
+            best = cand
+    return best
+
+
 def _approved_version(notification: Notification) -> DocumentVersion | None:
     approved = [v for v in (notification.versions or []) if v.review_status == "approved"]
     if not approved:
@@ -212,6 +407,13 @@ def build_job_row(notification: Notification, today: date | None = None) -> dict
         "review_status": version.review_status if version else None,
     }
 
+    row["year"] = notification.year or (
+        notification.recruitment.year if notification.recruitment else None
+    )
+    row["recruitment_key"] = (
+        notification.recruitment.recruitment_key if notification.recruitment else None
+    )
+
     if approved:
         row["age_policy"] = det.get("age_policy")
         row["age_rules_llm"] = llm.get("age_rules")
@@ -219,16 +421,21 @@ def build_job_row(notification: Notification, today: date | None = None) -> dict
         row["qualifications"] = llm.get("qualifications")
         row["district_rules"] = llm.get("district_rules")
         cutoff = extract_cutoff(det, llm)
-        if cutoff is not None:
-            row["cutoff"] = cutoff
-        else:
-            row["cutoff"] = None
+        row["cutoff"] = cutoff if cutoff is not None else None
+        row["age_relaxation"] = build_age_relaxation_summary(
+            row["age_policy"], row["age_policy_llm_fallback"]
+        )
     else:
         row["age_policy"] = None
+        row["age_rules_llm"] = None
         row["age_policy_llm_fallback"] = None
         row["qualifications"] = None
+        row["district_rules"] = None
         row["cutoff"] = None
+        row["age_relaxation"] = None
 
+    # Filled in by list_jobs once all candidates are known.
+    row["prior_cutoff"] = None
     return row
 
 
@@ -270,6 +477,29 @@ def list_jobs(
         else:  # all — include open, closed (6mo), and dates_unknown
             pass
         out.append(row)
+
+    # Prior-year cutoff: match against the full approved set (not just this window).
+    # Candidates need a real cutoff already extracted — never fabricate.
+    prior_pool = [r for r in out if r.get("eligibility_ready") and r.get("cutoff") is not None]
+    # Also include approved jobs outside the filtered window so year-1 closed
+    # priors remain visible when browsing open jobs.
+    if window != "all":
+        all_rows: list[dict] = []
+        for n in notifications:
+            row = build_job_row(n, today=today)
+            if row is None:
+                continue
+            all_rows.append(row)
+        prior_pool = [
+            r for r in all_rows
+            if r.get("eligibility_ready") and r.get("cutoff") is not None
+        ]
+
+    for r in out:
+        if not r.get("eligibility_ready"):
+            r["prior_cutoff"] = None
+            continue
+        r["prior_cutoff"] = find_prior_cutoff(r, prior_pool)
 
     if window == "open":
         # Prefer month-overlapping first, then by application_end ascending (soonest first).

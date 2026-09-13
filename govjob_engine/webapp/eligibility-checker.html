@@ -107,6 +107,24 @@
   .verdict-pill.yes{background:var(--yes-bg);color:var(--yes)}
   .verdict-pill.no{background:var(--no-bg);color:var(--no)}
   .verdict-pill.warn{background:var(--warn-bg);color:var(--warn)}
+
+  .job-opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .job-opt{
+    width:auto;padding:6px 10px;font-size:12px;font-weight:500;
+    background:var(--paper);color:var(--ink-2);border:1px solid var(--line);border-radius:6px;cursor:pointer;
+  }
+  .job-opt:hover{background:var(--yes-bg);color:var(--yes);border-color:#BFDBD1}
+  .job-opt.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .job-panel{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+  .job-panel h4{font-size:13px;font-weight:600;color:var(--ink);margin:0 0 6px}
+  .job-panel ul{margin:0;padding-left:18px}
+  .job-panel li{margin:2px 0}
+  .job-panel .muted{color:var(--ink-3)}
+  .focus-sections{margin-top:12px}
+  .focus-sec{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:8px;background:var(--paper)}
+  .focus-sec h4{font-size:13px;font-weight:600;margin:0 0 6px;color:var(--ink)}
+  .focus-sec p,.focus-sec li{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+  .focus-sec ul{margin:0;padding-left:18px}
 </style>
 </head>
 <body>
@@ -472,11 +490,15 @@ function jobToNotification(j){
     official_url: j.official_url,
     application_start: isoToDmy(j.application_start) || j.application_start,
     application_end: isoToDmy(j.application_end) || j.application_end,
+    year: j.year,
+    recruitment_key: j.recruitment_key,
     age_policy: j.age_policy,
     age_rules_llm: j.age_rules_llm,
     age_policy_llm_fallback: j.age_policy_llm_fallback,
+    age_relaxation: j.age_relaxation,
     qualifications: j.qualifications,
     cutoff: j.cutoff,
+    prior_cutoff: j.prior_cutoff,
   };
 }
 
@@ -520,41 +542,133 @@ function card(n, r){
   </div>`;
 }
 
-function formatCutoff(n){
-  if (n && n.cutoff != null && n.cutoff !== ""){
-    const cut = (typeof n.cutoff === "object") ? JSON.stringify(n.cutoff) : String(n.cutoff);
-    return `Cutoff: <b>${escapeHtml(cut)}</b>`;
+
+function formatCutoffValue(cut){
+  if (cut == null || cut === "") return null;
+  if (typeof cut === "object") return escapeHtml(JSON.stringify(cut));
+  return escapeHtml(String(cut));
+}
+
+function renderAgeRelaxationHtml(ar){
+  if (!ar){
+    return `<p class="muted">Age relaxation not extracted — check the official PDF.</p>`;
   }
+  const bits = [];
+  if (ar.as_on_date) bits.push(`<p>As on: <b>${escapeHtml(String(ar.as_on_date))}</b></p>`);
+  if (ar.min_age != null || ar.max_age != null){
+    const mn = ar.min_age != null ? ar.min_age : "—";
+    const mx = ar.max_age != null ? ar.max_age : "—";
+    bits.push(`<p>Age range: <b>${escapeHtml(String(mn))}</b> – <b>${escapeHtml(String(mx))}</b></p>`);
+  }
+  const entries = ar.entries || [];
+  if (entries.length){
+    bits.push("<ul>" + entries.map(e => {
+      const parts = [];
+      if (e.years != null) parts.push(`${e.years} yr${e.years===1?"":"s"} relaxation`);
+      if (e.min_age != null || e.max_age != null){
+        parts.push(`cap ${e.min_age != null ? e.min_age : "—"}–${e.max_age != null ? e.max_age : "—"}`);
+      }
+      return `<li><b>${escapeHtml(e.category || "?")}</b>${parts.length ? ": " + escapeHtml(parts.join(", ")) : ""}</li>`;
+    }).join("") + "</ul>");
+  } else if (ar.min_age == null && ar.max_age == null){
+    bits.push(`<p class="muted">Age relaxation not extracted — check the official PDF.</p>`);
+  }
+  return bits.join("") || `<p class="muted">Age relaxation not extracted — check the official PDF.</p>`;
+}
+
+function renderCutoffHtml(n){
+  const parts = [];
+  const thisCut = formatCutoffValue(n && n.cutoff);
+  if (thisCut){
+    parts.push(`<p>This notification: <b>${thisCut}</b></p>`);
+  } else {
+    parts.push(`<p class="muted">Cutoff not extracted — check the official PDF.</p>`);
+  }
+  const prior = n && n.prior_cutoff;
+  if (prior && prior.cutoff != null && prior.cutoff !== ""){
+    const pc = formatCutoffValue(prior.cutoff);
+    const yr = prior.year != null ? ` (${escapeHtml(String(prior.year))})` : "";
+    const title = prior.title ? ` — ${escapeHtml(prior.title)}` : "";
+    parts.push(`<p>Last year${yr}: <b>${pc}</b>${title}</p>`);
+  } else {
+    parts.push(`<p class="muted">Last year cutoff not published yet.</p>`);
+  }
+  return parts.join("");
+}
+
+function renderOtherHtml(n, j){
+  const bits = [];
+  const dept = (n && n.department) || (j && j.department);
+  const src = (n && n.source) || (j && j.source);
+  const quals = (n && n.qualifications) || (j && j.qualifications);
+  const start = (n && n.application_start) || (j && j.application_start);
+  const end = (n && n.application_end) || (j && j.application_end);
+  const url = (n && n.official_url) || (j && j.official_url);
+  if (dept) bits.push(`<p>Department / board: <b>${escapeHtml(dept)}</b></p>`);
+  if (src) bits.push(`<p>Source: <b>${escapeHtml(String(src).toUpperCase())}</b></p>`);
+  if (start || end){
+    bits.push(`<p>Apply: <b>${escapeHtml(fmtIso(start) || "unknown")}</b> → <b>${escapeHtml(fmtIso(end) || "unknown")}</b></p>`);
+  }
+  if (quals && quals.length){
+    bits.push("<ul>" + quals.map(q => {
+      const level = q.level || "unspecified";
+      const disc = q.discipline ? ` in ${q.discipline}` : "";
+      return `<li>${escapeHtml(level + disc)}</li>`;
+    }).join("") + "</ul>");
+  } else {
+    bits.push(`<p class="muted">Qualifications not extracted — check the official PDF.</p>`);
+  }
+  if (url) bits.push(`<a class="pdf" href="${escapeHtml(url)}" target="_blank" rel="noopener">Official PDF →</a>`);
+  return bits.join("") || `<p class="muted">No extra details extracted.</p>`;
+}
+
+function formatCutoff(n){
+  // Personalized result cards — never invent marks.
+  const thisCut = formatCutoffValue(n && n.cutoff);
+  if (thisCut) return `Cutoff: <b>${thisCut}</b>`;
   return "Cutoff not published yet — check the official PDF.";
 }
 
-function renderFocusedCard(n, r){
+function renderInfoSections(n, j){
+  return `<div class="focus-sections">
+    <div class="focus-sec"><h4>Age relaxation</h4>${renderAgeRelaxationHtml((n && n.age_relaxation) || (j && j.age_relaxation))}</div>
+    <div class="focus-sec"><h4>Cutoff</h4>${renderCutoffHtml(n || j || {})}</div>
+    <div class="focus-sec"><h4>Other</h4>${renderOtherHtml(n, j)}</div>
+  </div>`;
+}
+
+function renderFocusedCard(n, r, job){
   const el = $("focus");
-  const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
-  const verdict = VERDICT_LABEL[r.status] || "need-docs";
-  const asOn = (n.age_policy && n.age_policy.as_on_date) || (n.age_policy_llm_fallback && n.age_policy_llm_fallback.as_on_date);
-  const asOnDate = parseDMY(asOn);
+  const cls = r ? (r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn") : "";
   const lines = [];
-  if (r.age != null){
-    lines.push(`You are <b>${r.age}</b> on this notification’s as-on date${asOnDate ? ` (${fmt(asOnDate)})` : ""}${r.ceiling != null ? `, against a ceiling of <b>${r.ceiling}</b>` : ""}.`);
-  }
-  if (r.relaxYears > 0){
-    lines.push(`Your age relaxation: <b>${r.relaxYears} yrs</b>${r.relaxLabel ? ` (category ${escapeHtml(r.relaxLabel)})` : ""}.`);
+  let verdictHtml = "";
+  if (r){
+    const verdict = VERDICT_LABEL[r.status] || "need-docs";
+    verdictHtml = `<span class="verdict-pill ${cls}">${escapeHtml(verdict)}</span>`;
+    const asOn = (n.age_policy && n.age_policy.as_on_date) || (n.age_policy_llm_fallback && n.age_policy_llm_fallback.as_on_date);
+    const asOnDate = parseDMY(asOn);
+    if (r.age != null){
+      lines.push(`You are <b>${r.age}</b> on this notification’s as-on date${asOnDate ? ` (${fmt(asOnDate)})` : ""}${r.ceiling != null ? `, against a ceiling of <b>${r.ceiling}</b>` : ""}.`);
+    }
+    if (r.relaxYears > 0){
+      lines.push(`Your age relaxation: <b>${r.relaxYears} yrs</b>${r.relaxLabel ? ` (category ${escapeHtml(r.relaxLabel)})` : ""}.`);
+    } else if (r.age != null){
+      lines.push("Your age relaxation: <b>none</b> applied for your category on this notification.");
+    }
+    const extras = r.status === "bad" ? r.blockers : r.cautions;
+    extras.forEach(x => { if (x) lines.push(x); });
   } else {
-    lines.push("no extra relaxation for your category");
+    lines.push("Enter your date of birth above to see your personalised pass / fail for this notification.");
   }
-  lines.push(formatCutoff(n));
-  const extras = r.status === "bad" ? r.blockers : r.cautions;
-  extras.forEach(x => { if (x) lines.push(x); });
   el.hidden = false;
   el.style.display = "";
   el.innerHTML = `<div class="item ${cls}" style="margin:0;border:0;padding:0;background:transparent">
-    <span class="verdict-pill ${cls}">${escapeHtml(verdict)}</span>
-    <h3>${escapeHtml(n.title || n.notification_number || "Untitled notification")}</h3>
-    <p class="board">${escapeHtml(n.notification_number || "")}</p>
+    ${verdictHtml}
+    <h3>${escapeHtml((n && (n.title || n.notification_number)) || (job && (job.title || job.notification_number)) || "Untitled notification")}</h3>
+    <p class="board">${escapeHtml((n && n.notification_number) || (job && job.notification_number) || "")}</p>
     ${lines.map(l => `<p class="why">${l}</p>`).join("")}
-    <p class="conf ${r.confidence}">${CONF_LABEL[r.confidence] || ""}</p>
-    ${n.official_url ? `<a class="pdf" href="${escapeHtml(n.official_url)}" target="_blank" rel="noopener">View official notification →</a>` : ""}
+    ${r ? `<p class="conf ${r.confidence}">${CONF_LABEL[r.confidence] || ""}</p>` : ""}
+    ${renderInfoSections(n, job)}
   </div>`;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -565,30 +679,29 @@ async function showFocusedCard(jobId){
     try { NOTIFICATIONS = await loadNotifications(); } catch (e) { /* job row fallback */ }
   }
   const n = notificationForJob(job || { id: jobId });
-  if (!n || (!n.age_policy && !n.age_policy_llm_fallback && !(job && job.eligibility_ready))){
+  // Official extracted sections are always shown; personalised pass/fail needs DOB.
+  if (!n && !job){
     const el = $("focus");
     el.hidden = false;
     el.style.display = "";
-    el.innerHTML = `<p class="why">This notification is not eligibility-ready yet. Check the official PDF for age, relaxation, and cutoff.</p>
-      ${job && job.official_url ? `<a class="pdf" href="${escapeHtml(job.official_url)}" target="_blank" rel="noopener">View official notification →</a>` : ""}`;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.innerHTML = `<p class="why">Job not found.</p>`;
     return;
   }
-  renderFocusedCard(n, evaluate(readProfile(), n));
+  const merged = n || jobToNotification(job);
+  if (hasDob() && merged && (merged.age_policy || merged.age_policy_llm_fallback || (job && job.eligibility_ready))){
+    renderFocusedCard(merged, evaluate(readProfile(), merged), job);
+  } else {
+    renderFocusedCard(merged, null, job);
+  }
 }
 
 async function tapJob(jobId){
   persistProfile();
-  if (!hasDob()){
-    pendingJobId = jobId;
-    showError($("err"), "Enter your date of birth first.");
-    const form = $("dob").closest(".card");
-    if (form) form.scrollIntoView({ behavior: "smooth", block: "start" });
-    $("dob").focus();
-    return;
-  }
-  pendingJobId = null;
   clearError($("err"));
+  // Expand job details (age relaxation / cutoff / other) even before DOB.
+  // Personalised pass/fail still waits for DOB inside showFocusedCard.
+  if (!hasDob()) pendingJobId = jobId;
+  else pendingJobId = null;
   await showFocusedCard(jobId);
 }
 
@@ -707,15 +820,50 @@ function bindJobCards(el){
     const id = Number(node.getAttribute("data-job-id"));
     node.addEventListener("click", ev => {
       if (ev.target.closest("a")) return;
+      const opt = ev.target.closest(".job-opt");
+      if (opt){
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleJobSection(id, opt.getAttribute("data-section"), opt);
+        return;
+      }
       tapJob(id);
     });
     node.addEventListener("keydown", ev => {
-      if (ev.key === "Enter"){
+      if (ev.key === "Enter" && !ev.target.closest(".job-opt")){
         ev.preventDefault();
         tapJob(id);
       }
     });
   });
+}
+
+function toggleJobSection(jobId, section, btn){
+  const card = document.querySelector(`.job[data-job-id="${jobId}"]`);
+  if (!card) return;
+  const panel = card.querySelector(".job-panel");
+  const opts = card.querySelectorAll(".job-opt");
+  const j = JOBS_CACHE.find(x => x.id === jobId);
+  const n = notificationForJob(j) || jobToNotification(j);
+  if (!j && !n) return;
+  const already = btn.classList.contains("on");
+  opts.forEach(b => b.classList.remove("on"));
+  if (already){
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  btn.classList.add("on");
+  panel.hidden = false;
+  let body = "";
+  if (section === "age"){
+    body = `<h4>Age relaxation</h4>` + renderAgeRelaxationHtml((n && n.age_relaxation) || (j && j.age_relaxation));
+  } else if (section === "cutoff"){
+    body = `<h4>Cutoff</h4>` + renderCutoffHtml(n || j || {});
+  } else {
+    body = `<h4>Other</h4>` + renderOtherHtml(n, j);
+  }
+  panel.innerHTML = body;
 }
 
 function renderJobs(rows){
@@ -739,6 +887,12 @@ function renderJobs(rows){
         ${pill}
       </div>
       <p class="meta">${escapeHtml((j.source||"").toUpperCase())}${j.notification_number ? " · " + escapeHtml(j.notification_number) : ""} · ${escapeHtml(dates)} · ${badge}</p>
+      <div class="job-opts">
+        <button type="button" class="job-opt" data-section="age">Age relaxation</button>
+        <button type="button" class="job-opt" data-section="cutoff">Cutoff</button>
+        <button type="button" class="job-opt" data-section="other">Other</button>
+      </div>
+      <div class="job-panel" hidden></div>
       ${j.official_url ? `<a class="pdf" href="${escapeHtml(j.official_url)}" target="_blank" rel="noopener">Official PDF →</a>` : ""}
     </div>`;
   }).join("");

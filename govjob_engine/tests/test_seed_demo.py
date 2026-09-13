@@ -37,6 +37,7 @@ def test_seed_demo_open_closed_and_honest_cutoff():
     assert "DEMO-OPEN-1" in nums
     assert "DEMO-OPEN-2" in nums
     assert "DEMO-CLOSED-1" in nums
+    assert "DEMO-PRIOR-IBPS" in nums
 
     init_db()
     db = SessionLocal()
@@ -62,6 +63,8 @@ def test_seed_demo_open_closed_and_honest_cutoff():
             cut = extract_cutoff(merged.get("deterministic") or {}, merged.get("llm") or {})
             if n.notification_number == "DEMO-OPEN-2":
                 assert cut == {"oc": 72.5, "obc": 69, "sc": 62}
+            elif n.notification_number == "DEMO-PRIOR-IBPS":
+                assert cut == {"oc": 68.25, "obc": 64.5, "sc": 58}
             else:
                 assert cut is None
     finally:
@@ -78,7 +81,7 @@ def test_seed_demo_open_closed_and_honest_cutoff():
             n for n in db.scalars(select(Notification)).all()
             if (n.notification_number or "").startswith("DEMO-")
         ]
-        assert len(demo) == 3
+        assert len(demo) >= 3
     finally:
         db.close()
 

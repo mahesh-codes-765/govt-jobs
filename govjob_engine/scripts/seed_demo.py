@@ -1,8 +1,9 @@
-"""Idempotent demo seed: three reviewed notifications so the student home is not empty.
+"""Idempotent demo seed: reviewed notifications so the student home is not empty
+(two open, one closed, plus one prior-year IBPS with cutoff for last-year QA).
 
-Safe to re-run. Skips entirely if any non-DEMO notification exists (real crawl
-data is never overwritten). Dates are computed from *today* so the two open
-windows stay open this month and the closed one stays in the last 6 months.
+Safe to re-run. Only upserts DEMO-* rows (and the demo source) — real crawl
+notifications are never modified. Dates are computed from *today* so the open
+windows stay open this month and closed ones stay in the last 6 months.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from app.db import SessionLocal, init_db
 from app.models.notification import DocumentVersion, Notification, Recruitment, Source
 
 DEMO_SOURCE_KEY = "demo"
-DEMO_NUMBERS = ("DEMO-OPEN-1", "DEMO-OPEN-2", "DEMO-CLOSED-1")
+DEMO_NUMBERS = ("DEMO-OPEN-1", "DEMO-OPEN-2", "DEMO-CLOSED-1", "DEMO-PRIOR-IBPS")
 
 
 def _dmy(d: date) -> str:
@@ -46,14 +47,21 @@ def _windows(today: date | None = None) -> dict:
     start_b = today - timedelta(days=3)
     end_closed = today - timedelta(days=90)
     start_closed = end_closed - timedelta(days=21)
+    # Prior IBPS cycle: closed ~12 months before the current open IBPS demo.
+    end_prior = today - timedelta(days=365)
+    start_prior = end_prior - timedelta(days=21)
     as_on = date(today.year, 7, 1)
+    as_on_prior = date(today.year - 1, 7, 1)
     return {
         "today": today,
         "year": today.year,
+        "prior_year": today.year - 1,
         "as_on_dmy": _dmy(as_on),
+        "as_on_prior_dmy": _dmy(as_on_prior),
         "open_a": (start_a, end_open),
         "open_b": (start_b, end_open),
         "closed": (start_closed, end_closed),
+        "prior_ibps": (start_prior, end_prior),
     }
 
 
@@ -96,10 +104,13 @@ def _get_or_create_source(db) -> Source:
 
 def _specs(w: dict) -> list[dict]:
     as_on = w["as_on_dmy"]
+    as_on_prior = w["as_on_prior_dmy"]
     year = w["year"]
+    prior_year = w["prior_year"]
     a_start, a_end = w["open_a"]
     b_start, b_end = w["open_b"]
     c_start, c_end = w["closed"]
+    p_start, p_end = w["prior_ibps"]
 
     open1_det = {
         "notification_number": "DEMO-OPEN-1",
@@ -199,6 +210,35 @@ def _specs(w: dict) -> list[dict]:
         ],
     }
 
+
+    # Prior-year IBPS (closed) — published cutoff so DEMO-OPEN-2 can show last-year.
+    # Honest demo fixture only; not a live crawl mark.
+    prior_det = {
+        "notification_number": "DEMO-PRIOR-IBPS",
+        "notification_date": _dmy(p_start),
+        "post_title": "Office Assistant (Multipurpose)",
+        "application_start": _dmy(p_start),
+        "application_end": _dmy(p_end),
+        "age_policy": {
+            "as_on_date": as_on_prior,
+            "min_age": None,
+            "max_age": None,
+            "relaxations": [],
+            "confidence": "placeholder",
+        },
+    }
+    prior_llm = {
+        "source": "official_notification",
+        "department": "Institute of Banking Personnel Selection",
+        "qualifications": [{"level": "degree"}],
+        "age_rules": [
+            {"min_age": 18, "max_age": 30, "category": "UR", "as_on_date": as_on_prior},
+            {"min_age": 18, "max_age": 33, "category": "OBC", "as_on_date": as_on_prior},
+            {"min_age": 18, "max_age": 35, "category": "SC/ST", "as_on_date": as_on_prior},
+        ],
+        "cutoff": {"oc": 68.25, "obc": 64.5, "sc": 58},
+    }
+
     return [
         {
             "number": "DEMO-OPEN-1",
@@ -218,6 +258,8 @@ def _specs(w: dict) -> list[dict]:
             "start": b_start,
             "end": b_end,
             "year": year,
+            # Same base key as prior year so prior_cutoff matching is conservative.
+            "recruitment_key_base": "DEMO-OPEN-2",
             "extraction": {"deterministic": open2_det, "llm": open2_llm},
         },
         {
@@ -230,11 +272,23 @@ def _specs(w: dict) -> list[dict]:
             "year": year,
             "extraction": {"deterministic": closed_det, "llm": closed_llm},
         },
+        {
+            "number": "DEMO-PRIOR-IBPS",
+            "title": "IBPS RRB CRP — Office Assistant (Multipurpose)",
+            "department": "Institute of Banking Personnel Selection",
+            "url": "https://example.gov/demo/DEMO-PRIOR-IBPS",
+            "start": p_start,
+            "end": p_end,
+            "year": prior_year,
+            "recruitment_key_base": "DEMO-OPEN-2",
+            "extraction": {"deterministic": prior_det, "llm": prior_llm},
+        },
     ]
 
 
 def _upsert_job(db, source: Source, spec: dict) -> dict:
-    key = f"{DEMO_SOURCE_KEY}:{spec['number']}:{spec['year']}"
+    base = spec.get("recruitment_key_base") or spec["number"]
+    key = f"{DEMO_SOURCE_KEY}:{base}:{spec['year']}"
     rec = db.scalar(select(Recruitment).where(Recruitment.recruitment_key == key))
     if rec is None:
         rec = db.scalar(
@@ -339,7 +393,7 @@ def _upsert_job(db, source: Source, spec: dict) -> dict:
 
 
 def seed(db=None, today: date | None = None) -> dict:
-    """Insert or refresh the three demo reviewed jobs.
+    """Insert or refresh the demo reviewed jobs.
 
     Returns {"status": "ok"|"skipped", ...}. Never touches non-DEMO rows.
     """
@@ -348,8 +402,8 @@ def seed(db=None, today: date | None = None) -> dict:
         init_db()
         db = SessionLocal()
     try:
-        if _has_real_notifications(db):
-            return {"status": "skipped", "reason": "real_crawl_data"}
+        # Upsert DEMO rows only. Real crawl notifications are left untouched
+        # (_upsert_job keys exclusively on DEMO numbers / demo URLs).
         source = _get_or_create_source(db)
         rows = [_upsert_job(db, source, spec) for spec in _specs(_windows(today))]
         db.commit()
@@ -363,7 +417,7 @@ def seed(db=None, today: date | None = None) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Seed three reviewed demo jobs.")
+    parser = argparse.ArgumentParser(description="Seed reviewed demo jobs.")
     parser.add_argument(
         "--if-empty",
         action="store_true",
@@ -375,9 +429,6 @@ def main(argv: list[str] | None = None) -> int:
         print("seed_demo: skipped (notifications already present)")
         return 0
     result = seed()
-    if result["status"] == "skipped":
-        print("seed_demo: skipped (real crawl notifications present; not overwriting)")
-        return 0
     nums = ", ".join(j["notification_number"] for j in result["jobs"])
     print(f"seed_demo: reviewed demo jobs ready ({nums})")
     return 0

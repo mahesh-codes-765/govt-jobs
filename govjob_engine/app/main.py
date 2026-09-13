@@ -15,7 +15,7 @@ from app.db import init_db, SessionLocal
 from app.models.notification import Source, Recruitment, Notification, DocumentVersion, Lead
 from app.services.crawler import crawl
 from app.services import review, eventlog, adminsettings, scheduler, telegram_review, age_fallback
-from app.services.jobs import extract_cutoff, list_jobs
+from app.services.jobs import build_age_relaxation_summary, extract_cutoff, find_prior_cutoff, list_jobs
 
 setup_logging()
 init_db()
@@ -169,20 +169,52 @@ def eligibility_notifications():
             llm=merged.get('llm') or {}
             n=v.notification
             cutoff = extract_cutoff(det, llm if isinstance(llm, dict) else {})
+            age_policy = det.get('age_policy')
+            age_fb = age_fallback.build_fallback(llm.get('age_rules') if isinstance(llm, dict) else None)
             row={
                 'notification_id':n.id,'document_version_id':v.id,'source':n.source.key,
                 'notification_number':n.notification_number,'title':n.title,
                 'department':n.recruitment.department if n.recruitment else (llm.get('department') if llm else None),
                 'official_url':n.official_url,
                 'application_start':det.get('application_start'),'application_end':det.get('application_end'),
-                'age_policy':det.get('age_policy'),
+                'year': n.year or (n.recruitment.year if n.recruitment else None),
+                'recruitment_key': n.recruitment.recruitment_key if n.recruitment else None,
+                'age_policy':age_policy,
                 'age_rules_llm':llm.get('age_rules') if isinstance(llm, dict) else None,
-                'age_policy_llm_fallback':age_fallback.build_fallback(llm.get('age_rules') if isinstance(llm, dict) else None),
+                'age_policy_llm_fallback':age_fb,
+                'age_relaxation': build_age_relaxation_summary(age_policy, age_fb),
                 'qualifications':llm.get('qualifications') if isinstance(llm, dict) else None,
                 'district_rules':llm.get('district_rules') if isinstance(llm, dict) else None,
                 'cutoff': cutoff,
+                'prior_cutoff': None,
             }
             out.append(row)
+        # Attach prior_cutoff using the same conservative matcher as /jobs.
+        pool = []
+        for r in out:
+            if r.get('cutoff') is None:
+                continue
+            pool.append({
+                'id': r['notification_id'],
+                'source': r['source'],
+                'year': r.get('year'),
+                'title': r.get('title'),
+                'department': r.get('department'),
+                'recruitment_key': r.get('recruitment_key'),
+                'application_end': r.get('application_end'),
+                'cutoff': r.get('cutoff'),
+            })
+        for r in out:
+            cur = {
+                'id': r['notification_id'],
+                'source': r['source'],
+                'year': r.get('year'),
+                'title': r.get('title'),
+                'department': r.get('department'),
+                'recruitment_key': r.get('recruitment_key'),
+                'application_end': r.get('application_end'),
+            }
+            r['prior_cutoff'] = find_prior_cutoff(cur, pool)
         return out
     finally: db.close()
 
