@@ -7,3 +7,4 @@ data/*.db-*
 data/raw/*
 data/text/*
 data/llm_spend.json
+data/logs/
