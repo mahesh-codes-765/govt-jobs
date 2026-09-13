@@ -167,7 +167,7 @@ python scripts\agent.py --source tgpsc --year 2026 --once
 
 ## Eligibility checker (the product)
 
-A single-file, framework-free web app at `webapp/eligibility-checker.html`. It fetches `/eligibility/notifications` (approved notifications only), computes each candidate's age on that notification's own reckoning date, applies that notification's own relaxation rules, and checks qualification level/discipline — never a global rule table. Every card shows a confidence label (`good`/`partial`/`placeholder`), and low-confidence data is called out for manual verification rather than presented as a clean answer.
+First run (`scripts/run.sh` / `scripts/run.ps1`) seeds 3 reviewed demo jobs so `/app/` is not empty; live crawl is separate. A single-file, framework-free web app at `webapp/eligibility-checker.html`. It fetches `/eligibility/notifications` (approved notifications only), computes each candidate's age on that notification's own reckoning date, applies that notification's own relaxation rules, and checks qualification level/discipline — never a global rule table. Every card shows a confidence label (`good`/`partial`/`placeholder`), and low-confidence data is called out for manual verification rather than presented as a clean answer.
 
 Served same-origin by the API — just open:
 

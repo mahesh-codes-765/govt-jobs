@@ -14,7 +14,7 @@ Windows (PowerShell):
 cd govjob_engine; .\scripts\run.ps1
 ```
 
-The script creates a `.venv`, installs deps, copies `.env.example` → `.env` only if `.env` is missing, then starts the API on port 8000.
+The script creates a `.venv`, installs deps, copies `.env.example` → `.env` only if `.env` is missing, then starts the API on port 8000. First run seeds 3 reviewed demo jobs so the student home is not empty; live crawl is separate.
 
 ## URLs
 

@@ -92,11 +92,21 @@
   .tabs button{width:auto;flex:1;padding:10px 12px;font-size:14px;background:var(--card);color:var(--ink);border:1px solid var(--line)}
   .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   .joblist{margin-bottom:18px}
-  .job{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--card)}
+  .job{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--card);cursor:pointer}
+  .job:focus-visible{outline:2px solid var(--yes);outline-offset:2px}
   .job h3{font-size:15px;font-weight:500;margin:0 0 2px}
   .job .meta{font-size:12px;color:var(--ink-3);margin:0 0 6px}
+  .job-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .job-pill{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:500;flex:none;white-space:nowrap}
+  .job-pill.yes{background:var(--yes-bg);color:var(--yes)}
+  .job-pill.no{background:var(--no-bg);color:var(--no)}
+  .job-pill.warn{background:var(--warn-bg);color:var(--warn)}
   .badge-ready{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--yes-bg);color:var(--yes);font-weight:500}
   .badge-wait{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--warn-bg);color:var(--warn);font-weight:500}
+  .verdict-pill{display:inline-block;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;letter-spacing:.03em;margin:0 0 10px;text-transform:uppercase}
+  .verdict-pill.yes{background:var(--yes-bg);color:var(--yes)}
+  .verdict-pill.no{background:var(--no-bg);color:var(--no)}
+  .verdict-pill.warn{background:var(--warn-bg);color:var(--warn)}
 </style>
 </head>
 <body>
@@ -113,6 +123,8 @@
     </div>
     <div id="joblist" class="joblist"><p class="empty">Loading jobs…</p></div>
   </div>
+
+  <div id="focus" class="card" style="display:none" hidden></div>
 
   <div class="card">
     <div class="field">
@@ -402,13 +414,37 @@ function evaluate(user, n){
    ═══════════════════════════════════════════════════════════════════ */
 
 const $ = id => document.getElementById(id);
+const PROFILE_IDS = ["dob","cat","sex","pwd","qual","qdisc","dist"];
+const PROFILE_KEY = "govjob_eligibility_profile";
+const VERDICT_LABEL = { good: "pass", bad: "fail", warn: "need-docs" };
+
+let pendingJobId = null;
+let JOBS_CACHE = [];
+let currentJobsWindow = "open";
 
 function showError(el, msg){ el.textContent = msg; el.classList.add("on"); }
 function clearError(el){ el.classList.remove("on"); }
 
-["dob","cat","sex","pwd","qual","qdisc","dist"].forEach(id =>
-  $(id).addEventListener("input", () => clearError($("err"))));
-$("phone").addEventListener("input", () => clearError($("perr")));
+function readProfile(){
+  return {
+    dob: $("dob").value, cat: $("cat").value, sex: $("sex").value, pwd: $("pwd").value,
+    qual: $("qual").value, qdisc: $("qdisc").value, dist: $("dist").value,
+  };
+}
+function persistProfile(){
+  try { sessionStorage.setItem(PROFILE_KEY, JSON.stringify(readProfile())); } catch (e) {}
+}
+function restoreProfile(){
+  try {
+    const raw = sessionStorage.getItem(PROFILE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    PROFILE_IDS.forEach(id => {
+      if (saved[id] != null && $(id)) $(id).value = saved[id];
+    });
+  } catch (e) {}
+}
+function hasDob(){ return !!$("dob").value; }
 
 async function loadNotifications(){
   const res = await fetch(`${API_BASE}/eligibility/notifications`);
@@ -417,6 +453,39 @@ async function loadNotifications(){
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function isoToDmy(iso){
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return iso;
+}
+
+function jobToNotification(j){
+  if (!j) return null;
+  return {
+    notification_id: j.id,
+    title: j.title,
+    notification_number: j.notification_number,
+    source: j.source,
+    department: j.department,
+    official_url: j.official_url,
+    application_start: isoToDmy(j.application_start) || j.application_start,
+    application_end: isoToDmy(j.application_end) || j.application_end,
+    age_policy: j.age_policy,
+    age_rules_llm: j.age_rules_llm,
+    age_policy_llm_fallback: j.age_policy_llm_fallback,
+    qualifications: j.qualifications,
+    cutoff: j.cutoff,
+  };
+}
+
+function notificationForJob(j){
+  if (!j) return null;
+  const fromApi = NOTIFICATIONS.find(n => n.notification_id === j.id)
+    || NOTIFICATIONS.find(n => n.notification_number && n.notification_number === j.notification_number);
+  return fromApi || jobToNotification(j);
+}
 
 function card(n, r){
   const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
@@ -451,7 +520,89 @@ function card(n, r){
   </div>`;
 }
 
+function formatCutoff(n){
+  if (n && n.cutoff != null && n.cutoff !== ""){
+    const cut = (typeof n.cutoff === "object") ? JSON.stringify(n.cutoff) : String(n.cutoff);
+    return `Cutoff: <b>${escapeHtml(cut)}</b>`;
+  }
+  return "Cutoff not published yet — check the official PDF.";
+}
+
+function renderFocusedCard(n, r){
+  const el = $("focus");
+  const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
+  const verdict = VERDICT_LABEL[r.status] || "need-docs";
+  const asOn = (n.age_policy && n.age_policy.as_on_date) || (n.age_policy_llm_fallback && n.age_policy_llm_fallback.as_on_date);
+  const asOnDate = parseDMY(asOn);
+  const lines = [];
+  if (r.age != null){
+    lines.push(`You are <b>${r.age}</b> on this notification’s as-on date${asOnDate ? ` (${fmt(asOnDate)})` : ""}${r.ceiling != null ? `, against a ceiling of <b>${r.ceiling}</b>` : ""}.`);
+  }
+  if (r.relaxYears > 0){
+    lines.push(`Your age relaxation: <b>${r.relaxYears} yrs</b>${r.relaxLabel ? ` (category ${escapeHtml(r.relaxLabel)})` : ""}.`);
+  } else {
+    lines.push("no extra relaxation for your category");
+  }
+  lines.push(formatCutoff(n));
+  const extras = r.status === "bad" ? r.blockers : r.cautions;
+  extras.forEach(x => { if (x) lines.push(x); });
+  el.hidden = false;
+  el.style.display = "";
+  el.innerHTML = `<div class="item ${cls}" style="margin:0;border:0;padding:0;background:transparent">
+    <span class="verdict-pill ${cls}">${escapeHtml(verdict)}</span>
+    <h3>${escapeHtml(n.title || n.notification_number || "Untitled notification")}</h3>
+    <p class="board">${escapeHtml(n.notification_number || "")}</p>
+    ${lines.map(l => `<p class="why">${l}</p>`).join("")}
+    <p class="conf ${r.confidence}">${CONF_LABEL[r.confidence] || ""}</p>
+    ${n.official_url ? `<a class="pdf" href="${escapeHtml(n.official_url)}" target="_blank" rel="noopener">View official notification →</a>` : ""}
+  </div>`;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function showFocusedCard(jobId){
+  const job = JOBS_CACHE.find(j => j.id === jobId);
+  if (!NOTIFICATIONS.length){
+    try { NOTIFICATIONS = await loadNotifications(); } catch (e) { /* job row fallback */ }
+  }
+  const n = notificationForJob(job || { id: jobId });
+  if (!n || (!n.age_policy && !n.age_policy_llm_fallback && !(job && job.eligibility_ready))){
+    const el = $("focus");
+    el.hidden = false;
+    el.style.display = "";
+    el.innerHTML = `<p class="why">This notification is not eligibility-ready yet. Check the official PDF for age, relaxation, and cutoff.</p>
+      ${job && job.official_url ? `<a class="pdf" href="${escapeHtml(job.official_url)}" target="_blank" rel="noopener">View official notification →</a>` : ""}`;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  renderFocusedCard(n, evaluate(readProfile(), n));
+}
+
+async function tapJob(jobId){
+  persistProfile();
+  if (!hasDob()){
+    pendingJobId = jobId;
+    showError($("err"), "Enter your date of birth first.");
+    const form = $("dob").closest(".card");
+    if (form) form.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("dob").focus();
+    return;
+  }
+  pendingJobId = null;
+  clearError($("err"));
+  await showFocusedCard(jobId);
+}
+
+async function resumePendingJob(){
+  if (!pendingJobId || !hasDob()) return;
+  const id = pendingJobId;
+  pendingJobId = null;
+  persistProfile();
+  clearError($("err"));
+  await showFocusedCard(id);
+}
+
 $("go").addEventListener("click", async () => {
+  persistProfile();
   const dob = $("dob").value;
   if (!dob) return showError($("err"), "Enter your date of birth first.");
   const born = new Date(dob);
@@ -461,12 +612,10 @@ $("go").addEventListener("click", async () => {
   clearError($("err"));
   $("go").disabled = true; $("go").textContent = "Checking…";
 
-  const user = {
-    dob, cat: $("cat").value, sex: $("sex").value, pwd: $("pwd").value,
-    qual: $("qual").value, qdisc: $("qdisc").value, dist: $("dist").value,
-  };
+  const user = readProfile();
 
   try{
+    if (pendingJobId) await resumePendingJob();
     if (!NOTIFICATIONS.length) NOTIFICATIONS = await loadNotifications();
 
     const results = NOTIFICATIONS.map(n => ({ n, r: evaluate(user, n) }))
@@ -489,6 +638,7 @@ $("go").addEventListener("click", async () => {
 
     $("out").style.display = "block";
     $("out").scrollIntoView({ behavior:"smooth", block:"start" });
+    refreshJobPills();
   }catch(e){
     showError($("err"), `Could not reach the eligibility engine at ${API_BASE || "(same origin)"} — ${e.message || e}. Add ?api=http://127.0.0.1:8000 to the URL if the server runs elsewhere.`);
   }finally{
@@ -497,6 +647,7 @@ $("go").addEventListener("click", async () => {
 });
 
 $("save").addEventListener("click", async () => {
+  persistProfile();
   const phone = $("phone").value.trim();
   if (!/^[6-9]\d{9}$/.test(phone)) return showError($("perr"), "Enter a 10 digit Indian mobile number.");
   if (!$("consent").checked) return showError($("perr"), "Please tick the consent box.");
@@ -521,9 +672,19 @@ $("save").addEventListener("click", async () => {
   }
 });
 
+PROFILE_IDS.forEach(id => {
+  const onChange = () => {
+    persistProfile();
+    clearError($("err"));
+    refreshJobPills();
+    if (id === "dob") resumePendingJob();
+  };
+  $(id).addEventListener("input", onChange);
+  $(id).addEventListener("change", onChange);
+});
+$("phone").addEventListener("input", () => clearError($("perr")));
 
 /* ── Jobs browser (open this month / closed last 6 months) ─────────── */
-let currentJobsWindow = "open";
 
 function fmtIso(iso){
   if(!iso) return "date unknown";
@@ -532,7 +693,33 @@ function fmtIso(iso){
   return d.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
 }
 
+function personalPill(j){
+  if (!hasDob() || !j.eligibility_ready) return "";
+  const n = notificationForJob(j);
+  if (!n) return "";
+  const r = evaluate(readProfile(), n);
+  const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
+  return `<span class="job-pill ${cls}">${escapeHtml(VERDICT_LABEL[r.status] || "need-docs")}</span>`;
+}
+
+function bindJobCards(el){
+  el.querySelectorAll(".job[data-job-id]").forEach(node => {
+    const id = Number(node.getAttribute("data-job-id"));
+    node.addEventListener("click", ev => {
+      if (ev.target.closest("a")) return;
+      tapJob(id);
+    });
+    node.addEventListener("keydown", ev => {
+      if (ev.key === "Enter"){
+        ev.preventDefault();
+        tapJob(id);
+      }
+    });
+  });
+}
+
 function renderJobs(rows){
+  JOBS_CACHE = rows || [];
   const el = $("joblist");
   if (!rows || !rows.length){
     el.innerHTML = currentJobsWindow === "open"
@@ -545,12 +732,21 @@ function renderJobs(rows){
       ? '<span class="badge-ready">Eligibility ready</span>'
       : '<span class="badge-wait">Not yet reviewed</span>';
     const dates = `Apply: ${fmtIso(j.application_start)} → ${fmtIso(j.application_end)}`;
-    return `<div class="job">
-      <h3>${escapeHtml(j.title || j.notification_number || "Untitled")}</h3>
+    const pill = personalPill(j);
+    return `<div class="job" role="button" tabindex="0" data-job-id="${j.id}">
+      <div class="job-head">
+        <h3>${escapeHtml(j.title || j.notification_number || "Untitled")}</h3>
+        ${pill}
+      </div>
       <p class="meta">${escapeHtml((j.source||"").toUpperCase())}${j.notification_number ? " · " + escapeHtml(j.notification_number) : ""} · ${escapeHtml(dates)} · ${badge}</p>
       ${j.official_url ? `<a class="pdf" href="${escapeHtml(j.official_url)}" target="_blank" rel="noopener">Official PDF →</a>` : ""}
     </div>`;
   }).join("");
+  bindJobCards(el);
+}
+
+function refreshJobPills(){
+  if (JOBS_CACHE && JOBS_CACHE.length) renderJobs(JOBS_CACHE);
 }
 
 async function loadJobs(window){
@@ -574,11 +770,12 @@ $("tabClosed").addEventListener("click", () => {
   loadJobs("closed");
 });
 
-
 (async function init(){
+  restoreProfile();
   loadJobs("open");
   try{
     NOTIFICATIONS = await loadNotifications();
+    refreshJobPills();
   }catch(e){ /* surfaced when the user actually checks */ }
 })();
 </script>

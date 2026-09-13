@@ -12,7 +12,7 @@ from typing import Any
 
 from dateutil import parser as date_parser
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.notification import DocumentVersion, Notification, Source
 from app.services import age_fallback
@@ -243,7 +243,11 @@ def list_jobs(
     if window not in ("open", "closed", "all"):
         raise ValueError("window must be open|closed|all")
 
-    q = select(Notification).order_by(Notification.id.desc())
+    q = select(Notification).options(
+        selectinload(Notification.versions),
+        selectinload(Notification.source),
+        selectinload(Notification.recruitment),
+    ).order_by(Notification.id.desc())
     if source:
         q = q.join(Source).where(Source.key == source)
     notifications = db.scalars(q).unique().all()
