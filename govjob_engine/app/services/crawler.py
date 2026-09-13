@@ -71,7 +71,7 @@ def _process_documents(db, source_key, source, docs):
             txt=TEXT/f"{pdf.stem}.txt"; pdf.write_bytes(data)
             eventlog.emit("document_downloaded", f"{n.notification_number or n.id}: PDF downloaded ({len(data)} bytes)", source=source_key, notification_number=n.notification_number, bytes=len(data))
             pages_count,pages=extract_pdf(str(pdf),str(txt)); common=extract_common(pages)
-            classification=classify(pages, title=d.title)
+            classification=classify(pages, title=d.title, document_type=getattr(d, 'document_type', None) or n.document_type)
             llm=None; llm_error=None
             if classification["label"]=="recruitment" and classification["has_age_clause"]:
                 try:

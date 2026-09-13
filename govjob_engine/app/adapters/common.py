@@ -25,6 +25,7 @@ def doc_type_from(text: str) -> str:
     ]): return "result"
     if any(x in t for x in [
         "certificate verification", "verification of certificates", "document verification",
+        "document scrutiny", "scrutiny of", "scrutiny",
         "medical examination", "cbat", "cbt schedule",
     ]): return "verification"
     if any(x in t for x in ["hall ticket", "admit card"]): return "admit_card"

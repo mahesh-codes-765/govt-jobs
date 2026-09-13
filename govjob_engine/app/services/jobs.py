@@ -19,7 +19,11 @@ from app.services import age_fallback
 
 
 def parse_flexible_date(value: Any) -> date | None:
-    """Parse datetime/date/str into a date. Returns None if unparseable — never guesses."""
+    """Parse datetime/date/str into a date. Returns None if unparseable — never guesses.
+
+    Calendar dates are date-only. ISO YYYY-MM-DD is handled before dayfirst
+    parsing so "2026-07-01" stays 1 Jul (dateutil dayfirst would wrongly yield 7 Jan).
+    """
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
@@ -31,6 +35,13 @@ def parse_flexible_date(value: Any) -> date | None:
     s = value.strip()
     if not s:
         return None
+    # ISO date or datetime (what build_job_row / APIs emit) — never dayfirst these.
+    m_iso = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    if m_iso:
+        try:
+            return date(int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3)))
+        except ValueError:
+            return None
     # Prefer DD/MM/YYYY (common in Indian notifications) when unambiguous.
     m = re.match(r"^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", s)
     if m:

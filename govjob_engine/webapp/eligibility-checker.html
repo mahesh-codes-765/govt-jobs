@@ -254,6 +254,8 @@ let NOTIFICATIONS = [];
    THIS notification's own extracted rules. No global table.
    ═══════════════════════════════════════════════════════════════════ */
 
+/* Calendar dates are date-only. Always parse/display in UTC so
+   01/07/2026 never becomes 30 Jun in a behind-UTC locale. */
 function parseDMY(s){
   if(!s) return null;
   const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s).trim());
@@ -262,7 +264,9 @@ function parseDMY(s){
 }
 
 function ageOn(dobStr, refDate){
-  const d = new Date(dobStr + 'T00:00:00Z');
+  // HTML <input type="date"> values are YYYY-MM-DD; pin to UTC midnight.
+  const d = new Date(dobStr + (dobStr.length === 10 ? "T00:00:00Z" : ""));
+  if (isNaN(d) || !refDate) return null;
   let y = refDate.getUTCFullYear() - d.getUTCFullYear();
   const beforeBday = (refDate.getUTCMonth() < d.getUTCMonth()) ||
     (refDate.getUTCMonth() === d.getUTCMonth() && refDate.getUTCDate() < d.getUTCDate());
@@ -272,11 +276,21 @@ function ageOn(dobStr, refDate){
 
 function daysUntil(refDate){
   if(!refDate) return null;
-  return Math.ceil((refDate.getTime() - Date.now()) / 86400000);
+  // Compare UTC calendar days, not local wall-clock vs UTC midnight.
+  const todayUtc = Date.UTC(
+    new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()
+  );
+  const refUtc = Date.UTC(
+    refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate()
+  );
+  return Math.round((refUtc - todayUtc) / 86400000);
 }
 
 function fmt(refDate){
-  return refDate ? refDate.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" }) : "unknown";
+  // timeZone UTC is required: without it, UTC midnight shifts a day behind-UTC.
+  return refDate ? refDate.toLocaleDateString("en-IN", {
+    day:"numeric", month:"short", year:"numeric", timeZone:"UTC"
+  }) : "unknown";
 }
 
 function relaxationFor(user, policy){
@@ -473,6 +487,7 @@ async function loadNotifications(){
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function isoToDmy(iso){
+  // String-only rewrite — never new Date(...), so YYYY-MM-DD cannot shift a day.
   if (!iso) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
@@ -525,7 +540,7 @@ function card(n, r){
     const cut = (typeof n.cutoff === "object") ? JSON.stringify(n.cutoff) : String(n.cutoff);
     lines.push(`Cutoff: <b>${escapeHtml(cut)}</b>`);
   } else {
-    lines.push("Cutoff not extracted — check the official PDF.");
+    lines.push("Cutoff not published yet for this notification.");
   }
   const pills = [];
   if (r.closes) pills.push(`<span class="pill${r.left!=null && r.left<=14 ? " warn" : ""}">${r.left!=null ? (r.left>=0 ? r.left+" days to apply, " : "closed, ") : ""}closes ${fmt(r.closes)}</span>`);
@@ -582,7 +597,7 @@ function renderCutoffHtml(n){
   if (thisCut){
     parts.push(`<p>This notification: <b>${thisCut}</b></p>`);
   } else {
-    parts.push(`<p class="muted">Cutoff not extracted — check the official PDF.</p>`);
+    parts.push(`<p class="muted">Cutoff not published yet for this notification.</p>`);
   }
   const prior = n && n.prior_cutoff;
   if (prior && prior.cutoff != null && prior.cutoff !== ""){
@@ -591,7 +606,7 @@ function renderCutoffHtml(n){
     const title = prior.title ? ` — ${escapeHtml(prior.title)}` : "";
     parts.push(`<p>Last year${yr}: <b>${pc}</b>${title}</p>`);
   } else {
-    parts.push(`<p class="muted">Last year cutoff not published yet.</p>`);
+    parts.push(`<p class="muted">Last-year cutoff not available.</p>`);
   }
   return parts.join("");
 }
@@ -626,7 +641,7 @@ function formatCutoff(n){
   // Personalized result cards — never invent marks.
   const thisCut = formatCutoffValue(n && n.cutoff);
   if (thisCut) return `Cutoff: <b>${thisCut}</b>`;
-  return "Cutoff not published yet — check the official PDF.";
+  return "Cutoff not published yet for this notification.";
 }
 
 function renderInfoSections(n, j){
@@ -718,9 +733,10 @@ $("go").addEventListener("click", async () => {
   persistProfile();
   const dob = $("dob").value;
   if (!dob) return showError($("err"), "Enter your date of birth first.");
-  const born = new Date(dob);
+  const born = new Date(dob + (dob.length === 10 ? "T00:00:00Z" : ""));
   if (isNaN(born)) return showError($("err"), "That date of birth is not valid.");
-  if (born > new Date()) return showError($("err"), "Date of birth cannot be in the future.");
+  const todayUtc = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
+  if (born.getTime() > todayUtc) return showError($("err"), "Date of birth cannot be in the future.");
 
   clearError($("err"));
   $("go").disabled = true; $("go").textContent = "Checking…";
@@ -801,9 +817,20 @@ $("phone").addEventListener("input", () => clearError($("perr")));
 
 function fmtIso(iso){
   if(!iso) return "date unknown";
-  const d = new Date(iso + (iso.length===10 ? "T00:00:00Z" : ""));
+  // Prefer string rewrite for YYYY-MM-DD (Python date.isoformat) so we never
+  // invent a timezone; fall back to UTC Date formatting for datetimes.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (m) {
+    const d = new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+    return d.toLocaleDateString("en-IN", {
+      day:"numeric", month:"short", year:"numeric", timeZone:"UTC"
+    });
+  }
+  const d = new Date(iso);
   if (isNaN(d)) return iso;
-  return d.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
+  return d.toLocaleDateString("en-IN", {
+    day:"numeric", month:"short", year:"numeric", timeZone:"UTC"
+  });
 }
 
 function personalPill(j){

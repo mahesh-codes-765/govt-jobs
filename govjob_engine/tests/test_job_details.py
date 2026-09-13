@@ -187,7 +187,8 @@ def test_eligibility_endpoint_includes_age_relaxation(client):
 def test_ui_never_fakes_numeric_cutoff():
     html = (Path(__file__).resolve().parents[1] / "webapp" / "eligibility-checker.html").read_text()
     # Honest missing-copy strings must be present.
-    assert "Last year cutoff not published yet." in html
+    assert "Last-year cutoff not available." in html
+    assert "Cutoff not published yet for this notification." in html
     assert "Age relaxation not extracted — check the official PDF." in html
     # No hardcoded demo cutoff numbers as JS defaults / placeholders.
     assert "72.5" not in html
