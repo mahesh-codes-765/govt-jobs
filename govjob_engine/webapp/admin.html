@@ -170,8 +170,37 @@ const $ = id => document.getElementById(id);
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtTime(iso){ try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
 
+/* Admin Basic auth — prompt once, sessionStorage only (never localStorage for the password). */
+const AUTH_KEY = 'govjob_admin_basic';
+function getAuthHeader(){
+  return sessionStorage.getItem(AUTH_KEY);
+}
+function promptAuth(){
+  const u = prompt('Admin username', 'admin');
+  if (u == null) return null;
+  const p = prompt('Admin password');
+  if (p == null) return null;
+  const token = btoa(unescape(encodeURIComponent(u + ':' + p)));
+  sessionStorage.setItem(AUTH_KEY, token);
+  return token;
+}
+function clearAuth(){ sessionStorage.removeItem(AUTH_KEY); }
+
 async function api(path, opts){
-  const res = await fetch(`${API_BASE}${path}`, opts);
+  opts = opts || {};
+  const headers = new Headers(opts.headers || {});
+  let token = getAuthHeader() || promptAuth();
+  if (!token) throw new Error('Admin login cancelled');
+  headers.set('Authorization', 'Basic ' + token);
+  opts = { ...opts, headers };
+  let res = await fetch(`${API_BASE}${path}`, opts);
+  if (res.status === 401){
+    clearAuth();
+    token = promptAuth();
+    if (!token) throw new Error('Admin login cancelled');
+    headers.set('Authorization', 'Basic ' + token);
+    res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+  }
   if(!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
   return res.json();
 }

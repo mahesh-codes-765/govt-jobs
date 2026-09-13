@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     telegram_poll_interval_seconds: float = 2.0
     crawl_poll_interval_seconds: float = 1800.0
 
+    # Admin HTTP Basic — empty ADMIN_PASS fails closed (protected routes 401).
+    admin_user: str = "admin"
+    admin_pass: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

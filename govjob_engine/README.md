@@ -90,6 +90,8 @@ Useful endpoints:
 - `GET /recruitments?source=tgpsc&year=2026`
 - `GET /notifications?source=tgpsc&year=2026`
 - `GET /notifications/{id}`
+- `GET /jobs?window=open|closed|all` (public student feed)
+- `GET /eligibility/notifications` (approved only)
 
 ## 5. Inspect the database
 
@@ -190,7 +192,7 @@ http://127.0.0.1:8000/app/admin.html
 
 The scheduler (both the site-crawl loop and the web-discovery loop) and, if configured, the Telegram poller all start automatically when the API process starts — `scripts/agent.py` is still available as a standalone CLI alternative (now a thin wrapper around the same `app/services/scheduler.py`), but running `uvicorn app.main:app` is the one thing that needs to stay running for everything (API + web app + admin + scheduler + Telegram) to work.
 
-**Note:** the admin dashboard has no login. Fine for `127.0.0.1`-only use; don't expose this port beyond localhost without adding auth first.
+**Admin auth:** HTTP Basic via `ADMIN_USER` / `ADMIN_PASS` in `.env` (see `.env.example`). Protects `/admin/*`, `/review/*`, `GET /leads`, `POST /crawl/{source}`, and `/app/admin.html`. An empty `ADMIN_PASS` fails closed (401) — admin is locked until you set a password. The admin UI prompts once and keeps credentials in `sessionStorage` only.
 
 ## Lead capture (the revenue mechanism)
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Am I eligible? — AP & TS exam checker</title>
+<title>Am I eligible? — Govt jobs eligibility checker</title>
 <style>
   :root{
     --ink:#17211F; --ink-2:#4A5754; --ink-3:#7C8785;
@@ -87,13 +87,32 @@
   .consent input{width:16px; height:16px; margin-top:2px; flex:none}
 
   .status{font-size:13px; color:var(--ink-2); padding:14px 0; text-align:center}
+
+  .tabs{display:flex;gap:8px;margin:0 0 12px}
+  .tabs button{width:auto;flex:1;padding:10px 12px;font-size:14px;background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .joblist{margin-bottom:18px}
+  .job{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--card)}
+  .job h3{font-size:15px;font-weight:500;margin:0 0 2px}
+  .job .meta{font-size:12px;color:var(--ink-3);margin:0 0 6px}
+  .badge-ready{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--yes-bg);color:var(--yes);font-weight:500}
+  .badge-wait{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--warn-bg);color:var(--warn);font-weight:500}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <h1>Am I eligible?</h1>
-  <p class="sub">Enter your details once. See every reviewed AP and Telangana notification you qualify for, with your age relaxation already applied.</p>
+  <p class="sub">Browse open and recently closed government jobs across the boards we crawl (TGPSC, APPSC, RRB, IBPS, DRDO, ISRO, and more via web discovery). Check eligibility with that notification’s own age relaxation — never a shared table.</p>
+
+
+  <div class="card" id="jobsBrowser">
+    <div class="tabs" role="tablist">
+      <button type="button" class="on" id="tabOpen" data-window="open">Open this month</button>
+      <button type="button" id="tabClosed" data-window="closed">Closed last 6 months</button>
+    </div>
+    <div id="joblist" class="joblist"><p class="empty">Loading jobs…</p></div>
+  </div>
 
   <div class="card">
     <div class="field">
@@ -151,7 +170,7 @@
     <p class="err" id="err"></p>
   </div>
 
-  <div id="out">
+  <div id="out" style="display:none">
     <div class="card verdict">
       <div class="count" id="count"></div>
       <div class="agenote" id="agenote"></div>
@@ -367,7 +386,15 @@ function evaluate(user, n){
     if (!agree) confidence = "contested";
   }
   const status = blockers.length ? "bad" : (cautions.length ? "warn" : "good");
-  return { status, blockers, cautions, age, ceiling, relax: relax.years, left, closes, confidence };
+  let relaxYears = relax.years;
+  let relaxLabel = relax.matched ? (relax.matched.category || null) : null;
+  if (hasFallbackAge && !hasDeterministicAge){
+    const lr = llmRelaxationFor(user, fallback);
+    relaxYears = lr.years;
+    relaxLabel = lr.matched ? (lr.matched.category || null) : null;
+  }
+  return { status, blockers, cautions, age, ceiling, relax: relaxYears, relaxYears, relaxLabel, left, closes, confidence };
+
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -393,8 +420,22 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 
 function card(n, r){
   const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
-  const lines = r.status === "bad" ? r.blockers : [...r.cautions];
-  if (r.status === "good" && r.age != null) lines.unshift(`You are <b>${r.age}</b> on ${fmt(parseDMY(n.age_policy.as_on_date))}, against a ceiling of <b>${r.ceiling}</b>.`);
+  const lines = r.status === "bad" ? [...r.blockers] : [...r.cautions];
+  const asOn = (n.age_policy && n.age_policy.as_on_date) || (n.age_policy_llm_fallback && n.age_policy_llm_fallback.as_on_date);
+  if (r.status === "good" && r.age != null) lines.unshift(`You are <b>${r.age}</b> on ${fmt(parseDMY(asOn))}, against a ceiling of <b>${r.ceiling}</b>.`);
+  // Personalized age relaxation — only report what the engine matched for THIS user.
+  if (r.relaxYears > 0){
+    lines.push(`Your age relaxation: <b>${r.relaxYears} year${r.relaxYears===1?"":"s"}</b>${r.relaxLabel ? ` (${escapeHtml(r.relaxLabel)})` : ""}.`);
+  } else if (r.age != null){
+    lines.push("Your age relaxation: <b>none</b> applied for your category on this notification.");
+  }
+  // Cutoff — show only if API sent one; never invent marks.
+  if (n.cutoff != null && n.cutoff !== ""){
+    const cut = (typeof n.cutoff === "object") ? JSON.stringify(n.cutoff) : String(n.cutoff);
+    lines.push(`Cutoff: <b>${escapeHtml(cut)}</b>`);
+  } else {
+    lines.push("Cutoff not extracted — check the official PDF.");
+  }
   const pills = [];
   if (r.closes) pills.push(`<span class="pill${r.left!=null && r.left<=14 ? " warn" : ""}">${r.left!=null ? (r.left>=0 ? r.left+" days to apply, " : "closed, ") : ""}closes ${fmt(r.closes)}</span>`);
   if (n.department) pills.push(`<span class="pill flat">${escapeHtml(n.department)}</span>`);
@@ -480,7 +521,62 @@ $("save").addEventListener("click", async () => {
   }
 });
 
+
+/* ── Jobs browser (open this month / closed last 6 months) ─────────── */
+let currentJobsWindow = "open";
+
+function fmtIso(iso){
+  if(!iso) return "date unknown";
+  const d = new Date(iso + (iso.length===10 ? "T00:00:00Z" : ""));
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
+}
+
+function renderJobs(rows){
+  const el = $("joblist");
+  if (!rows || !rows.length){
+    el.innerHTML = currentJobsWindow === "open"
+      ? '<p class="empty">No reviewed open jobs yet — or none with known application dates still open.</p>'
+      : '<p class="empty">No closed jobs in the last 6 months with known application end dates.</p>';
+    return;
+  }
+  el.innerHTML = rows.map(j => {
+    const badge = j.eligibility_ready
+      ? '<span class="badge-ready">Eligibility ready</span>'
+      : '<span class="badge-wait">Not yet reviewed</span>';
+    const dates = `Apply: ${fmtIso(j.application_start)} → ${fmtIso(j.application_end)}`;
+    return `<div class="job">
+      <h3>${escapeHtml(j.title || j.notification_number || "Untitled")}</h3>
+      <p class="meta">${escapeHtml((j.source||"").toUpperCase())}${j.notification_number ? " · " + escapeHtml(j.notification_number) : ""} · ${escapeHtml(dates)} · ${badge}</p>
+      ${j.official_url ? `<a class="pdf" href="${escapeHtml(j.official_url)}" target="_blank" rel="noopener">Official PDF →</a>` : ""}
+    </div>`;
+  }).join("");
+}
+
+async function loadJobs(window){
+  currentJobsWindow = window;
+  $("joblist").innerHTML = '<p class="empty">Loading…</p>';
+  try{
+    const res = await fetch(`${API_BASE}/jobs?window=${encodeURIComponent(window)}`);
+    if(!res.ok) throw new Error(`API ${res.status}`);
+    renderJobs(await res.json());
+  }catch(e){
+    $("joblist").innerHTML = `<p class="empty">Could not load jobs (${escapeHtml(e.message||e)}).</p>`;
+  }
+}
+
+$("tabOpen").addEventListener("click", () => {
+  $("tabOpen").classList.add("on"); $("tabClosed").classList.remove("on");
+  loadJobs("open");
+});
+$("tabClosed").addEventListener("click", () => {
+  $("tabClosed").classList.add("on"); $("tabOpen").classList.remove("on");
+  loadJobs("closed");
+});
+
+
 (async function init(){
+  loadJobs("open");
   try{
     NOTIFICATIONS = await loadNotifications();
   }catch(e){ /* surfaced when the user actually checks */ }

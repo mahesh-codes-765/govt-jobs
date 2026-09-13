@@ -1,16 +1,21 @@
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
+
+from app.auth import check_basic_header, require_admin
 from app.logging_config import setup_logging
 from app.db import init_db, SessionLocal
 from app.models.notification import Source, Recruitment, Notification, DocumentVersion, Lead
 from app.services.crawler import crawl
 from app.services import review, eventlog, adminsettings, scheduler, telegram_review, age_fallback
+from app.services.jobs import extract_cutoff, list_jobs
 
 setup_logging()
 init_db()
@@ -23,10 +28,37 @@ async def lifespan(app: FastAPI):
     yield
 
 app=FastAPI(title="GovJob Intelligence Engine",version="1.0.0",lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET","POST"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 WEBAPP_DIR = Path(__file__).resolve().parents[1] / "webapp"
+
+@app.middleware("http")
+async def protect_admin_static(request: Request, call_next):
+    """Fail-closed Basic auth for the admin HTML (StaticFiles has no Depends)."""
+    path = request.url.path.rstrip("/") or "/"
+    if path == "/app/admin.html" or path.endswith("/admin.html"):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        auth = request.headers.get("Authorization")
+        if not check_basic_header(auth):
+            return JSONResponse(
+                {"detail": "Not authenticated"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Basic"},
+            )
+    return await call_next(request)
+
 if WEBAPP_DIR.exists():
+    # Explicit protected route takes precedence over the StaticFiles mount.
+    @app.get("/app/admin.html")
+    def serve_admin_html(_user: str = Depends(require_admin)):
+        return FileResponse(WEBAPP_DIR / "admin.html")
+
     app.mount("/app", StaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp")
 
 @app.get('/health')
@@ -39,7 +71,7 @@ def sources():
     finally: db.close()
 
 @app.post('/crawl/{source_key}')
-def run_crawl(source_key:str, year:int|None=None, all_years:bool=False):
+def run_crawl(source_key:str, year:int|None=None, all_years:bool=False, _user: str = Depends(require_admin)):
     try: return crawl(source_key,year=year,all_years=all_years,triggered_by="api_manual")
     except ValueError as e: raise HTTPException(404,str(e))
 
@@ -76,7 +108,7 @@ def notification(notification_id:int):
 # --- Human review queue -----------------------------------------------
 
 @app.get('/review/pending')
-def review_pending():
+def review_pending(_user: str = Depends(require_admin)):
     db=SessionLocal()
     try:
         rows=review.pending(db)
@@ -90,16 +122,34 @@ class ReviewAction(BaseModel):
     reason: str | None = None
 
 @app.post('/review/{document_version_id}/approve')
-def review_approve(document_version_id:int, action:ReviewAction):
+def review_approve(document_version_id:int, action:ReviewAction, _user: str = Depends(require_admin)):
     try: v=review.approve(document_version_id, action.decided_by)
     except ValueError as e: raise HTTPException(404,str(e))
     return {'document_version_id':v.id,'review_status':v.review_status}
 
 @app.post('/review/{document_version_id}/reject')
-def review_reject(document_version_id:int, action:ReviewAction):
+def review_reject(document_version_id:int, action:ReviewAction, _user: str = Depends(require_admin)):
     try: v=review.reject(document_version_id, action.decided_by, action.reason)
     except ValueError as e: raise HTTPException(404,str(e))
     return {'document_version_id':v.id,'review_status':v.review_status}
+
+# --- Public jobs feed (student product) --------------------------------
+
+@app.get('/jobs')
+def jobs(window: str = "all", source: str | None = None):
+    """Open this month / closed last 6 months / all (incl. dates_unknown).
+
+    Never invents dates or cutoffs. eligibility_ready is true only when an
+    approved DocumentVersion exists.
+    """
+    db = SessionLocal()
+    try:
+        try:
+            return list_jobs(db, window=window, source=source)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    finally:
+        db.close()
 
 # --- Public eligibility feed (the product) -----------------------------
 
@@ -115,21 +165,24 @@ def eligibility_notifications():
         out=[]
         for v in rows:
             merged=json.loads(v.extraction_json or '{}')
-            det=merged.get('deterministic',{})
+            det=merged.get('deterministic',{}) or {}
             llm=merged.get('llm') or {}
             n=v.notification
-            out.append({
+            cutoff = extract_cutoff(det, llm if isinstance(llm, dict) else {})
+            row={
                 'notification_id':n.id,'document_version_id':v.id,'source':n.source.key,
                 'notification_number':n.notification_number,'title':n.title,
                 'department':n.recruitment.department if n.recruitment else (llm.get('department') if llm else None),
                 'official_url':n.official_url,
                 'application_start':det.get('application_start'),'application_end':det.get('application_end'),
                 'age_policy':det.get('age_policy'),
-                'age_rules_llm':llm.get('age_rules'),
-                'age_policy_llm_fallback':age_fallback.build_fallback(llm.get('age_rules')),
-                'qualifications':llm.get('qualifications'),
-                'district_rules':llm.get('district_rules'),
-            })
+                'age_rules_llm':llm.get('age_rules') if isinstance(llm, dict) else None,
+                'age_policy_llm_fallback':age_fallback.build_fallback(llm.get('age_rules') if isinstance(llm, dict) else None),
+                'qualifications':llm.get('qualifications') if isinstance(llm, dict) else None,
+                'district_rules':llm.get('district_rules') if isinstance(llm, dict) else None,
+                'cutoff': cutoff,
+            }
+            out.append(row)
         return out
     finally: db.close()
 
@@ -164,7 +217,7 @@ def create_lead(lead:LeadIn):
     finally: db.close()
 
 @app.get('/leads')
-def list_leads(district:str|None=None, category:str|None=None, sold:bool|None=None):
+def list_leads(district:str|None=None, category:str|None=None, sold:bool|None=None, _user: str = Depends(require_admin)):
     db=SessionLocal()
     try:
         q=select(Lead).order_by(Lead.id.desc())
@@ -180,7 +233,7 @@ def list_leads(district:str|None=None, category:str|None=None, sold:bool|None=No
 # --- Admin: scheduling, manual crawl trigger, live log feed -------------
 
 @app.get('/admin/sources')
-def admin_sources():
+def admin_sources(_user: str = Depends(require_admin)):
     """The fixed site adapters actually registered — drives the admin
     page's source checkboxes so it never drifts from what's really
     available."""
@@ -188,7 +241,7 @@ def admin_sources():
     return [{'key':k,'name':a.name,'listing_url':a.listing_url} for k,a in ((k,v()) for k,v in ADAPTERS.items())]
 
 @app.get('/admin/status')
-def admin_status():
+def admin_status(_user: str = Depends(require_admin)):
     from app.services import spend
     from app.config import settings as cfg
     db=SessionLocal()
@@ -213,7 +266,7 @@ def admin_status():
         'llm_spend_usd_this_month': spend.month_spend_usd('llm'),
         'llm_monthly_cap_usd': cfg.llm_monthly_usd_cap,
         'web_discovery_spend_usd_this_month': spend.month_spend_usd('web_discovery'),
-        'web_discovery_monthly_cap_usd': cfg.web_discovery_monthly_usd_cap,
+        'web_discovery_monthly_usd_cap': cfg.web_discovery_monthly_usd_cap,
         'counts': counts,
     }
 
@@ -228,11 +281,11 @@ class AdminSettingsIn(BaseModel):
     web_discovery_queries: list[str] | None = None
 
 @app.get('/admin/settings')
-def admin_get_settings():
+def admin_get_settings(_user: str = Depends(require_admin)):
     return adminsettings.load()
 
 @app.post('/admin/settings')
-def admin_update_settings(patch: AdminSettingsIn):
+def admin_update_settings(patch: AdminSettingsIn, _user: str = Depends(require_admin)):
     updated = adminsettings.save({k:v for k,v in patch.model_dump().items() if v is not None})
     eventlog.emit("admin_settings_changed", f"Admin settings updated: {patch.model_dump(exclude_none=True)}")
     return updated
@@ -243,7 +296,7 @@ class CrawlNowIn(BaseModel):
     all_years: bool | None = None
 
 @app.post('/admin/crawl-now')
-def admin_crawl_now(body: CrawlNowIn = CrawlNowIn()):
+def admin_crawl_now(body: CrawlNowIn = CrawlNowIn(), _user: str = Depends(require_admin)):
     started = scheduler.trigger_now(sources=body.sources, year=body.year, all_years=body.all_years)
     if not started:
         raise HTTPException(409, 'A crawl is already running')
@@ -253,7 +306,7 @@ class WebDiscoveryNowIn(BaseModel):
     queries: list[str] | None = None
 
 @app.post('/admin/web-discovery/run')
-def admin_web_discovery_run(body: WebDiscoveryNowIn = WebDiscoveryNowIn()):
+def admin_web_discovery_run(body: WebDiscoveryNowIn = WebDiscoveryNowIn(), _user: str = Depends(require_admin)):
     from app.config import settings as cfg
     if not cfg.web_discovery_enabled:
         raise HTTPException(400, 'WEB_DISCOVERY_ENABLED is false in .env - set it true and restart to use this.')
@@ -263,7 +316,7 @@ def admin_web_discovery_run(body: WebDiscoveryNowIn = WebDiscoveryNowIn()):
     return {'status': 'started'}
 
 @app.get('/admin/logs')
-def admin_logs(limit: int=200, event_type: str|None=None, since_id: int|None=None):
+def admin_logs(limit: int=200, event_type: str|None=None, since_id: int|None=None, _user: str = Depends(require_admin)):
     db=SessionLocal()
     try:
         rows=eventlog.recent(db, limit=limit, event_type=event_type, since_id=since_id)
