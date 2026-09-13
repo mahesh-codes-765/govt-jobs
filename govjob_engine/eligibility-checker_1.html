@@ -1,0 +1,439 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Am I eligible? — AP & TS exam checker</title>
+<style>
+  :root{
+    --ink:#17211F; --ink-2:#4A5754; --ink-3:#7C8785;
+    --paper:#EEF1EF; --card:#FFFFFF; --line:#D6DDDA;
+    --yes:#0D5C4A; --yes-bg:#E2F0EB;
+    --no:#9E2F2F; --no-bg:#F7E9E9;
+    --warn:#845009; --warn-bg:#FBF0DC;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font:400 16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:20px 16px 64px}
+  h1{font-size:26px; font-weight:600; letter-spacing:-.02em; margin:0 0 4px; line-height:1.2}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 24px}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px}
+
+  label{display:block; font-size:13px; color:var(--ink-2); margin:0 0 5px}
+  .field{margin-bottom:14px}
+  input,select{
+    width:100%; padding:11px 12px; font-size:16px; font-family:inherit; color:var(--ink);
+    background:#fff; border:1px solid var(--line); border-radius:8px; appearance:none;
+  }
+  input:focus,select:focus{outline:2px solid var(--yes); outline-offset:1px; border-color:var(--yes)}
+  .row{display:flex; gap:10px}
+  .row>*{flex:1; min-width:0}
+
+  button{
+    width:100%; padding:14px; font:500 16px/1 inherit; color:#fff; background:var(--ink);
+    border:0; border-radius:8px; cursor:pointer;
+  }
+  button:hover{background:#000}
+  button:focus-visible{outline:2px solid var(--yes); outline-offset:2px}
+  button.ghost{background:transparent; color:var(--yes); border:1px solid var(--yes)}
+  button.ghost:hover{background:var(--yes-bg)}
+
+  .err{color:var(--no); font-size:13px; margin-top:6px; display:none}
+  .err.on{display:block}
+
+  .verdict{text-align:left; padding:22px 18px}
+  .count{font-size:46px; font-weight:600; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+  .count small{font-size:17px; font-weight:400; color:var(--ink-2); letter-spacing:0; margin-left:8px}
+  .agenote{margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:14px; color:var(--ink-2)}
+
+  .sect{font-size:13px; color:var(--ink-3); margin:22px 0 8px}
+
+  .item{border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:10px; background:var(--card)}
+  .item.yes{border-left:3px solid var(--yes); border-radius:0 10px 10px 0}
+  .item.no{border-left:3px solid var(--no); border-radius:0 10px 10px 0; background:#FCFBFB}
+  .item h3{font-size:16px; font-weight:500; margin:0 0 2px}
+  .board{font-size:12px; color:var(--ink-3); margin:0 0 8px}
+  .why{font-size:14px; color:var(--ink-2); margin:0}
+  .why b{font-weight:500; color:var(--ink)}
+  .stats{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px}
+  .pill{font-size:12px; padding:4px 9px; border-radius:6px; background:var(--yes-bg); color:var(--yes)}
+  .pill.warn{background:var(--warn-bg); color:var(--warn)}
+  .pill.flat{background:var(--paper); color:var(--ink-2)}
+  .conf{font-size:12px; margin-top:10px; padding:8px 10px; border-radius:6px; line-height:1.45}
+  .conf.contested{background:var(--no-bg); color:var(--no)}
+  .conf.placeholder{background:var(--warn-bg); color:var(--warn)}
+  .conf.partial{background:var(--warn-bg); color:var(--warn)}
+  .conf.good{background:var(--yes-bg); color:var(--yes)}
+
+  .lead{background:var(--yes-bg); border:1px solid #BFDBD1; border-radius:12px; padding:18px; margin-top:22px}
+  .lead h2{font-size:17px; font-weight:500; margin:0 0 4px}
+  .lead p{font-size:14px; color:var(--ink-2); margin:0 0 14px}
+  .lead button{background:var(--yes)}
+  .lead button:hover{background:#0A4A3B}
+  .saved{font-size:14px; color:var(--yes); margin:0}
+  .saved code{font-size:12px; color:var(--ink-2); word-break:break-all}
+
+  .verify{margin-top:26px; padding:14px; border:1px dashed #C2A86A; border-radius:10px; background:var(--warn-bg); font-size:13px; color:var(--warn)}
+  .verify b{font-weight:600}
+  #out{display:none}
+</style>
+
+<div class="wrap">
+
+  <h1>Am I eligible?</h1>
+  <p class="sub">Enter your details once. See every open AP and Telangana notification you qualify for, with your age relaxation already applied.</p>
+
+  <div class="card">
+    <div class="field">
+      <label for="dob">Date of birth</label>
+      <input type="date" id="dob">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="cat">Category</label>
+        <select id="cat">
+          <option value="OC">OC</option>
+          <option value="BC">BC (A/B/C/D/E)</option>
+          <option value="SC">SC</option>
+          <option value="ST">ST</option>
+          <option value="EWS">EWS</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sex">Gender</label>
+        <select id="sex">
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="pwd">Any of these apply to you?</label>
+      <select id="pwd">
+        <option value="none">None</option>
+        <option value="pwd">Person with disability</option>
+        <option value="exs">Ex-serviceman</option>
+        <option value="gov">Current state government employee</option>
+      </select>
+    </div>
+    <div class="field" id="svcwrap" style="display:none">
+      <label for="svc">Years of military service completed</label>
+      <input type="number" id="svc" min="0" max="30" value="0">
+    </div>
+    <div class="field">
+      <label for="qual">Highest qualification completed</label>
+      <select id="qual">
+        <option value="10th">10th / SSC</option>
+        <option value="12th">Intermediate / 12th</option>
+        <option value="iti">ITI or Diploma</option>
+        <option value="degree">Any degree</option>
+        <option value="btech">B.Tech / Engineering</option>
+        <option value="pg">Post graduate</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="dist">District</label>
+      <select id="dist"></select>
+    </div>
+    <button id="go">Check my eligibility</button>
+    <p class="err" id="err"></p>
+  </div>
+
+  <div id="out">
+    <div class="card verdict">
+      <div class="count" id="count"></div>
+      <div class="agenote" id="agenote"></div>
+    </div>
+    <div id="list"></div>
+    <div class="lead" id="lead">
+      <h2>Get told the moment a new one opens</h2>
+      <p>We ping you on WhatsApp only when a notification you actually qualify for is released. Nothing else.</p>
+      <div class="field">
+        <label for="phone">WhatsApp number</label>
+        <input type="tel" id="phone" placeholder="10 digits" maxlength="10" inputmode="numeric">
+      </div>
+      <button id="save">Notify me</button>
+      <p class="err" id="perr"></p>
+    </div>
+  </div>
+
+  <div class="verify">
+    <b>Mahi — three rows still need your eyes.</b> Every card now states its own confidence.
+    APPSC 18 to 42 and the 750 vacancies are confirmed. The TGPSC Group-III row is marked contested
+    because Telangana let its age concession lapse and sources publish 34, 36 and 44 for the same exam.
+    Four rows are still placeholders. Open the notification PDFs, correct those rows, and this ships.
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   BLOCK 1 — RULES.  Verify against official notifications, then edit.
+   Relaxation is in years, added to the post's base upper age limit.
+   ═══════════════════════════════════════════════════════════════════ */
+const RULES = {
+  qualRank:   { "10th":1, "12th":2, iti:3, degree:4, btech:5, pg:6 },
+  qualLabel:  { "10th":"10th", "12th":"Intermediate", iti:"ITI or diploma",
+                degree:"a degree", btech:"B.Tech", pg:"a post graduate degree" },
+
+  /* Fallback only. Used when a notification does not carry its own
+     relaxation block. Every notification SHOULD carry its own. */
+  defaultRelax: { OC:0, EWS:0, BC:5, SC:5, ST:5 },
+  defaultExtra: { none:0, pwd:10, exs:3, gov:5 }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   BLOCK 2 — NOTIFICATIONS.  The parser writes this automatically.
+   Hand-written here so the engine can be tested today.
+   ageAsOn = the date the notification reckons age from (dd is ISO).
+   ═══════════════════════════════════════════════════════════════════ */
+const NOTIFICATIONS = [
+  { id:"appsc-g2-2026", board:"APPSC", name:"Group-II Services",
+    minAge:18, maxAge:42, ageAsOn:"2026-07-01", closes:"2026-10-14",
+    needs:"degree", posts:{ Other:750 },
+    relax:{ OC:0, EWS:0, BC:5, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:5 },
+    exsAddsService:true,
+    confidence:"partial",
+    note:"18 to 42 confirmed against multiple sources. 750 vacancies announced. Closing date still unverified.",
+    cutoff:{ OC:82.5, BC:78.0, SC:71.5, ST:69.0, EWS:80.0 } },
+
+  { id:"tgpsc-g3-2026", board:"TGPSC", name:"Group-III Services",
+    minAge:18, maxAge:34, ageAsOn:"2026-07-01", closes:"2026-09-30",
+    needs:"degree", posts:{ Other:1365 },
+    relax:{ OC:0, EWS:5, BC:5, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:5 },
+    confidence:"contested",
+    note:"Telangana let its 10 year concession lapse, so the base reverted to 34. Sources currently publish 34, 36 and 44. Do not ship this row until the PDF is read directly.",
+    cutoff:{ OC:74.0, BC:70.5, SC:64.0, ST:61.5, EWS:72.0 } },
+
+  { id:"tgpsc-asci-2026", board:"TGPSC", name:"Assistant Scientist, Pollution Control Board",
+    minAge:18, maxAge:44, ageAsOn:"2026-07-01", closes:"2026-05-25",
+    needs:"degree", posts:{ Other:20 },
+    relax:{ OC:0, EWS:5, BC:5, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:5 },
+    confidence:"good",
+    note:"Base of 34 was raised to 44 by a separate commission notice for this notification alone. This is exactly why relaxation cannot live in a global table.",
+    cutoff:{ OC:71.0, BC:67.5, SC:61.0, ST:58.5, EWS:69.0 } },
+
+  { id:"appsc-jl-2026", board:"APPSC", name:"Junior Lecturer",
+    minAge:18, maxAge:42, ageAsOn:"2026-07-01", closes:"2026-11-02",
+    needs:"pg", posts:{ Other:45 },
+    relax:{ OC:0, EWS:0, BC:5, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:5 },
+    exsAddsService:true,
+    confidence:"placeholder",
+    note:"Dates and vacancy counts not verified.",
+    cutoff:{ OC:88.0, BC:84.5, SC:78.0, ST:75.0, EWS:86.0 } },
+
+  { id:"rrb-ntpc-2026", board:"RRB", name:"NTPC Graduate posts",
+    minAge:18, maxAge:33, ageAsOn:"2026-07-01", closes:"2026-09-21",
+    needs:"degree", posts:{ Other:8113 },
+    relax:{ OC:0, EWS:0, BC:3, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:0 },
+    confidence:"placeholder",
+    note:"Central rules differ from state rules. OBC relaxation is 3 years here, not 5. Verify.",
+    cutoff:{ OC:79.5, BC:76.0, SC:70.0, ST:67.0, EWS:77.5 } },
+
+  { id:"ssc-chsl-2026", board:"SSC", name:"CHSL (10+2 level)",
+    minAge:18, maxAge:27, ageAsOn:"2026-08-01", closes:"2026-09-18",
+    needs:"12th", posts:{ Other:3712 },
+    relax:{ OC:0, EWS:0, BC:3, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:0 },
+    confidence:"placeholder",
+    note:"Dates and vacancy counts not verified.",
+    cutoff:{ OC:158.0, BC:151.0, SC:141.0, ST:136.0, EWS:155.0 } },
+
+  { id:"appsc-anm-2026", board:"APPSC", name:"Auxiliary Nurse Midwife",
+    minAge:18, maxAge:42, ageAsOn:"2026-07-01", closes:"2026-10-07",
+    needs:"12th", femaleOnly:true, posts:{ Other:269 },
+    relax:{ OC:0, EWS:0, BC:5, SC:5, ST:5 },
+    extra:{ none:0, pwd:10, exs:3, gov:5 },
+    exsAddsService:true,
+    confidence:"placeholder",
+    note:"Dates and vacancy counts not verified.",
+    cutoff:{ OC:69.0, BC:65.5, SC:59.0, ST:56.5, EWS:67.0 } }
+];
+
+const DISTRICTS = ["Krishna","Guntur","Visakhapatnam","NTR","West Godavari",
+                   "East Godavari","Prakasam","Nellore","Kurnool","Anantapur",
+                   "Hyderabad","Rangareddy","Warangal","Karimnagar","Other"];
+
+/* ═══════════════════════════════════════════════════════════════════
+   BLOCK 3 — ENGINE.  This is the part that must never be wrong.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function ageOn(dobStr, refStr){
+  const d = new Date(dobStr), r = new Date(refStr);
+  let y = r.getFullYear() - d.getFullYear();
+  const m = r.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && r.getDate() < d.getDate())) y--;
+  return y;
+}
+
+function daysUntil(dateStr){
+  const ms = new Date(dateStr) - new Date();
+  return Math.ceil(ms / 86400000);
+}
+
+function fmt(dateStr){
+  return new Date(dateStr).toLocaleDateString("en-IN",
+    { day:"numeric", month:"short", year:"numeric" });
+}
+
+function relaxationFor(user, n){
+  const catTable = (n && n.relax)  || RULES.defaultRelax;
+  const extTable = (n && n.extra)  || RULES.defaultExtra;
+  let years = (catTable[user.cat] || 0) + (extTable[user.pwd] || 0);
+  if (user.pwd === "exs" && n && n.exsAddsService) years += (user.svc || 0);
+  return years;
+}
+
+function evaluate(user, n){
+  const relax   = relaxationFor(user, n);
+  const ceiling = n.maxAge + relax;
+  const age     = ageOn(user.dob, n.ageAsOn);
+  const left    = daysUntil(n.closes);
+  const reasons = [];
+
+  if (left < 0)                       reasons.push("Applications have closed.");
+  if (age < n.minAge)                 reasons.push(`You are ${age} on ${fmt(n.ageAsOn)}. Minimum is ${n.minAge}.`);
+  if (age > ceiling)                  reasons.push(`You are ${age} on ${fmt(n.ageAsOn)}. Your ceiling is ${ceiling}${relax ? ` (${n.maxAge} plus ${relax} years relaxation)` : ""}.`);
+  if (n.femaleOnly && user.sex !== "F") reasons.push("This recruitment is for women only.");
+  if (RULES.qualRank[user.qual] < RULES.qualRank[n.needs])
+    reasons.push(`Needs ${RULES.qualLabel[n.needs]}. You have ${RULES.qualLabel[user.qual]}.`);
+
+  const posts = n.posts[user.dist] ?? n.posts.Other ?? 0;
+
+  return {
+    ok: reasons.length === 0,
+    confidence: n.confidence || "placeholder", note: n.note || "",
+    reasons, age, ceiling, relax, left, posts,
+    cutoff: n.cutoff[user.cat] ?? n.cutoff.OC,
+    districtSpecific: n.posts[user.dist] !== undefined
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   BLOCK 4 — INTERFACE
+   ═══════════════════════════════════════════════════════════════════ */
+
+const $ = id => document.getElementById(id);
+
+$("dist").innerHTML = DISTRICTS.map(d => `<option>${d}</option>`).join("");
+
+function showError(el, msg){
+  el.textContent = msg;
+  el.classList.add("on");
+}
+function clearError(el){ el.classList.remove("on"); }
+
+["dob","cat","sex","pwd","qual","dist"].forEach(id =>
+  $(id).addEventListener("input", () => clearError($("err"))));
+
+$("pwd").addEventListener("change", () => {
+  $("svcwrap").style.display = $("pwd").value === "exs" ? "block" : "none";
+});
+$("phone").addEventListener("input", () => clearError($("perr")));
+
+$("go").addEventListener("click", () => {
+  const dob = $("dob").value;
+  if (!dob) return showError($("err"), "Enter your date of birth first.");
+
+  const born = new Date(dob);
+  if (isNaN(born)) return showError($("err"), "That date of birth is not valid.");
+  if (born > new Date()) return showError($("err"), "Date of birth cannot be in the future.");
+  if (ageOn(dob, new Date().toISOString().slice(0,10)) > 75)
+    return showError($("err"), "Check the date of birth — that reads as over 75 years.");
+
+  clearError($("err"));
+
+  const user = {
+    dob, cat:$("cat").value, sex:$("sex").value,
+    pwd:$("pwd").value, qual:$("qual").value, dist:$("dist").value,
+    svc: parseInt($("svc").value, 10) || 0
+  };
+
+  const results = NOTIFICATIONS
+    .map(n => ({ n, r: evaluate(user, n) }))
+    .sort((a,b) => (b.r.ok - a.r.ok) || (a.r.left - b.r.left));
+
+  const open = results.filter(x => x.r.left >= 0).length;
+  const win  = results.filter(x => x.r.ok).length;
+
+  $("count").innerHTML = `${win} of ${open}<small>open notifications you qualify for</small>`;
+
+  const relax = Math.max(...NOTIFICATIONS.map(n => relaxationFor(user, n)));
+  $("agenote").textContent = relax
+    ? `You get up to ${relax} extra years above the stated upper age limits. The exact number differs per notification, so each card below shows the ceiling that applies to you there.`
+    : `No age relaxation applies to you, so the stated upper limits are your limits.`;
+
+  $("list").innerHTML =
+    (win ? `<p class="sect">You qualify for these</p>` : "") +
+    results.filter(x => x.r.ok).map(card).join("") +
+    `<p class="sect">You are blocked from these, and why</p>` +
+    results.filter(x => !x.r.ok).map(card).join("");
+
+  $("out").style.display = "block";
+  $("out").scrollIntoView({ behavior:"smooth", block:"start" });
+});
+
+const CONF_LABEL = {
+  good:        "Verified against the commission notice.",
+  partial:     "Age limit verified. Dates not yet.",
+  contested:   "Sources disagree on the age limit. Treat as unreliable.",
+  placeholder: "Not yet verified against the official notification."
+};
+
+function confLine(r){
+  return `<p class="conf ${r.confidence}">${CONF_LABEL[r.confidence]}${r.note ? " " + r.note : ""}</p>`;
+}
+
+function card({n, r}){
+  if (r.ok){
+    const urgent = r.left <= 14;
+    return `<div class="item yes">
+      <h3>${n.name}</h3>
+      <p class="board">${n.board}</p>
+      <p class="why">You are <b>${r.age}</b> on ${fmt(n.ageAsOn)}, against a ceiling of <b>${r.ceiling}</b>.</p>
+      <div class="stats">
+        <span class="pill${urgent ? " warn" : ""}">${r.left} days to apply, closes ${fmt(n.closes)}</span>
+        <span class="pill flat">${r.posts} posts${r.districtSpecific ? " in your district" : ""}</span>
+        <span class="pill flat">Last cutoff ${r.cutoff} for your category</span>
+      </div>
+      ${confLine(r)}
+    </div>`;
+  }
+  return `<div class="item no">
+    <h3>${n.name}</h3>
+    <p class="board">${n.board}</p>
+    <p class="why">${r.reasons.join(" ")}</p>
+    ${confLine(r)}
+  </div>`;
+}
+
+$("save").addEventListener("click", () => {
+  const phone = $("phone").value.trim();
+  if (!/^[6-9]\d{9}$/.test(phone))
+    return showError($("perr"), "Enter a 10 digit Indian mobile number.");
+  clearError($("perr"));
+
+  const lead = {
+    phone,
+    district: $("dist").value,
+    category: $("cat").value,
+    qualification: $("qual").value,
+    gender: $("sex").value,
+    dob: $("dob").value,
+    capturedAt: new Date().toISOString()
+  };
+
+  $("lead").innerHTML = `<h2>Saved</h2>
+    <p class="saved">We will message ${phone} when something new opens that you qualify for.</p>
+    <p class="saved" style="margin-top:14px;color:var(--ink-2);font-size:13px">
+      This is the record a coaching centre pays for. No backend is wired yet, so it exists only in this browser tab:<br>
+      <code>${JSON.stringify(lead)}</code></p>`;
+});
+</script>

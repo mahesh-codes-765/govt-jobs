@@ -1,0 +1,24 @@
+{
+  "scheduler_enabled": false,
+  "crawl_interval_seconds": 1800.0,
+  "crawl_sources": [
+    "tgpsc",
+    "appsc",
+    "rrb_secunderabad",
+    "ibps",
+    "drdo",
+    "isro"
+  ],
+  "crawl_year": 2026,
+  "crawl_all_years": false,
+  "web_discovery_scheduler_enabled": false,
+  "web_discovery_interval_seconds": 21600.0,
+  "web_discovery_queries": [
+    "site:tgpsc.gov.in OR site:appsc.gov.in OR site:ssc.gov.in new recruitment notification 2026 PDF",
+    "UPSC recruitment notification 2026 PDF site:upsc.gov.in",
+    "site:indiapost.gov.in OR site:indiapostgdsonline.gov.in Gramin Dak Sevak GDS recruitment notification 2026 PDF",
+    "site:ibps.in OR site:pfrda.org.in OR site:iob.in bank officer recruitment notification 2026 PDF",
+    "PSU public sector undertaking recruitment notification 2026 PDF site:.gov.in OR site:.nic.in engineer OR manager",
+    "MPESB OR CERT-In OR MeitY OR IndiaAI recruitment notification 2026 PDF site:.gov.in OR site:.nic.in"
+  ]
+}

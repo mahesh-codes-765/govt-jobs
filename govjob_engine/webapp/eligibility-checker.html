@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Am I eligible? — AP & TS exam checker</title>
+<style>
+  :root{
+    --ink:#17211F; --ink-2:#4A5754; --ink-3:#7C8785;
+    --paper:#EEF1EF; --card:#FFFFFF; --line:#D6DDDA;
+    --yes:#0D5C4A; --yes-bg:#E2F0EB;
+    --no:#9E2F2F; --no-bg:#F7E9E9;
+    --warn:#845009; --warn-bg:#FBF0DC;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font:400 16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:20px 16px 64px}
+  h1{font-size:26px; font-weight:600; letter-spacing:-.02em; margin:0 0 4px; line-height:1.2}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 24px}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px}
+
+  label{display:block; font-size:13px; color:var(--ink-2); margin:0 0 5px}
+  .field{margin-bottom:14px}
+  input,select{
+    width:100%; padding:11px 12px; font-size:16px; font-family:inherit; color:var(--ink);
+    background:#fff; border:1px solid var(--line); border-radius:8px; appearance:none;
+  }
+  input:focus,select:focus{outline:2px solid var(--yes); outline-offset:1px; border-color:var(--yes)}
+  .row{display:flex; gap:10px}
+  .row>*{flex:1; min-width:0}
+
+  button{
+    width:100%; padding:14px; font:500 16px/1 inherit; color:#fff; background:var(--ink);
+    border:0; border-radius:8px; cursor:pointer;
+  }
+  button:hover{background:#000}
+  button:focus-visible{outline:2px solid var(--yes); outline-offset:2px}
+  button:disabled{opacity:.5; cursor:not-allowed}
+  button.ghost{background:transparent; color:var(--yes); border:1px solid var(--yes)}
+  button.ghost:hover{background:var(--yes-bg)}
+
+  .err{color:var(--no); font-size:13px; margin-top:6px; display:none}
+  .err.on{display:block}
+
+  .verdict{text-align:left; padding:22px 18px}
+  .count{font-size:46px; font-weight:600; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+  .count small{font-size:17px; font-weight:400; color:var(--ink-2); letter-spacing:0; margin-left:8px}
+  .agenote{margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:14px; color:var(--ink-2)}
+
+  .sect{font-size:13px; color:var(--ink-3); margin:22px 0 8px}
+  .empty{color:var(--ink-2); font-size:14px; padding:14px 0}
+
+  .item{border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:10px; background:var(--card)}
+  .item.yes{border-left:3px solid var(--yes); border-radius:0 10px 10px 0}
+  .item.no{border-left:3px solid var(--no); border-radius:0 10px 10px 0; background:#FCFBFB}
+  .item.warn{border-left:3px solid var(--warn); border-radius:0 10px 10px 0; background:#FFFDF8}
+  .item h3{font-size:16px; font-weight:500; margin:0 0 2px}
+  .board{font-size:12px; color:var(--ink-3); margin:0 0 8px}
+  .why{font-size:14px; color:var(--ink-2); margin:0}
+  .why b{font-weight:500; color:var(--ink)}
+  .why + .why{margin-top:4px}
+  .stats{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px}
+  .pill{font-size:12px; padding:4px 9px; border-radius:6px; background:var(--yes-bg); color:var(--yes)}
+  .pill.warn{background:var(--warn-bg); color:var(--warn)}
+  .pill.flat{background:var(--paper); color:var(--ink-2)}
+  .conf{font-size:12px; margin-top:10px; padding:8px 10px; border-radius:6px; line-height:1.45}
+  .conf.contested{background:var(--no-bg); color:var(--no)}
+  .conf.placeholder{background:var(--warn-bg); color:var(--warn)}
+  .conf.partial{background:var(--warn-bg); color:var(--warn)}
+  .conf.good{background:var(--yes-bg); color:var(--yes)}
+  a.pdf{display:inline-block; margin-top:8px; font-size:12.5px; color:var(--yes); text-decoration:none}
+  a.pdf:hover{text-decoration:underline}
+
+  .lead{background:var(--yes-bg); border:1px solid #BFDBD1; border-radius:12px; padding:18px; margin-top:22px}
+  .lead h2{font-size:17px; font-weight:500; margin:0 0 4px}
+  .lead p{font-size:14px; color:var(--ink-2); margin:0 0 14px}
+  .lead button{background:var(--yes)}
+  .lead button:hover{background:#0A4A3B}
+  .saved{font-size:14px; color:var(--yes); margin:0}
+  .saved code{font-size:12px; color:var(--ink-2); word-break:break-all}
+  .consent{display:flex; align-items:flex-start; gap:8px; font-size:13px; color:var(--ink-2); margin:0 0 14px}
+  .consent input{width:16px; height:16px; margin-top:2px; flex:none}
+
+  .status{font-size:13px; color:var(--ink-2); padding:14px 0; text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Am I eligible?</h1>
+  <p class="sub">Enter your details once. See every reviewed AP and Telangana notification you qualify for, with your age relaxation already applied.</p>
+
+  <div class="card">
+    <div class="field">
+      <label for="dob">Date of birth</label>
+      <input type="date" id="dob">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="cat">Category</label>
+        <select id="cat">
+          <option value="OC">OC</option>
+          <option value="BC">BC (A/B/C/D/E)</option>
+          <option value="SC">SC</option>
+          <option value="ST">ST</option>
+          <option value="EWS">EWS</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sex">Gender</label>
+        <select id="sex">
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="pwd">Any of these apply to you?</label>
+      <select id="pwd">
+        <option value="none">None</option>
+        <option value="pwd">Person with disability</option>
+        <option value="exs">Ex-serviceman</option>
+        <option value="gov">Current state government employee</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="qual">Highest qualification completed</label>
+      <select id="qual">
+        <option value="10th">10th / SSC</option>
+        <option value="12th">Intermediate / 12th</option>
+        <option value="diploma">ITI or Diploma</option>
+        <option value="degree">Any degree</option>
+        <option value="professional">B.Tech / Engineering / other professional degree</option>
+        <option value="pg">Post graduate</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="qdisc">Field of study (optional — helps match subject-specific posts)</label>
+      <input type="text" id="qdisc" placeholder="e.g. civil engineering">
+    </div>
+    <div class="field">
+      <label for="dist">District (optional)</label>
+      <input type="text" id="dist" placeholder="e.g. Hyderabad">
+    </div>
+    <button id="go">Check my eligibility</button>
+    <p class="err" id="err"></p>
+  </div>
+
+  <div id="out">
+    <div class="card verdict">
+      <div class="count" id="count"></div>
+      <div class="agenote" id="agenote"></div>
+    </div>
+    <div id="list"></div>
+    <div class="lead" id="lead">
+      <h2>Get told the moment a new one opens</h2>
+      <p>We message you on WhatsApp only about notifications you actually qualify for. Nothing else.</p>
+      <div class="field">
+        <label for="phone">WhatsApp number</label>
+        <input type="tel" id="phone" placeholder="10 digits" maxlength="10" inputmode="numeric">
+      </div>
+      <label class="consent"><input type="checkbox" id="consent"> I agree to be contacted on WhatsApp about government job notifications matching my details.</label>
+      <button id="save">Notify me</button>
+      <p class="err" id="perr"></p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   Live data — fetched from the govjob_engine API. Nothing here is
+   hand-written or hardcoded: every field a card shows (age range,
+   reckoning date, relaxation, qualification) comes from a document a
+   human has already approved, or is honestly omitted/flagged when the
+   engine couldn't extract it. Vacancy counts and cutoff marks are not
+   extracted by the current pipeline, so they are never shown — a
+   fabricated number is worse than no number.
+   ═══════════════════════════════════════════════════════════════════ */
+const DEFAULT_API = (location.protocol.startsWith('http') && location.port !== '') ? '' : 'http://127.0.0.1:8000';
+const API_BASE = new URLSearchParams(location.search).get('api') || localStorage.getItem('govjob_api_base') || DEFAULT_API;
+if (new URLSearchParams(location.search).get('api')) localStorage.setItem('govjob_api_base', API_BASE);
+
+const QUAL_RANK  = { "10th":1, "12th":2, diploma:3, degree:4, professional:4, pg:5, doctorate:6 };
+const QUAL_LABEL = { "10th":"10th", "12th":"Intermediate", diploma:"ITI or diploma",
+                      degree:"a degree", professional:"a professional degree", pg:"a post graduate degree", doctorate:"a doctorate" };
+const CONF_LABEL = {
+  good:        "Verified: both readers agree, category relaxation confirmed.",
+  partial:     "Partially verified — some fields (usually category relaxation) were not confirmed. Check the PDF before relying on the ceiling.",
+  contested:   "The two readers disagree on the age limit. Treat this as unreliable until a human re-checks the PDF.",
+  ai_only:     "Age eligibility read by the AI extractor only — the automatic cross-check reader found nothing to confirm it against (common for category-table age layouts). Verify against the official PDF before relying on it.",
+  placeholder: "Not yet reliably extracted — check the official notification directly."
+};
+
+let NOTIFICATIONS = [];
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENGINE — this is the part that must never be wrong. Age is computed
+   on THIS notification's own reckoning date, relaxation comes from
+   THIS notification's own extracted rules. No global table.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function parseDMY(s){
+  if(!s) return null;
+  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s).trim());
+  if(!m) return null;
+  return new Date(Date.UTC(+m[3], +m[2]-1, +m[1]));
+}
+
+function ageOn(dobStr, refDate){
+  const d = new Date(dobStr + 'T00:00:00Z');
+  let y = refDate.getUTCFullYear() - d.getUTCFullYear();
+  const beforeBday = (refDate.getUTCMonth() < d.getUTCMonth()) ||
+    (refDate.getUTCMonth() === d.getUTCMonth() && refDate.getUTCDate() < d.getUTCDate());
+  if (beforeBday) y--;
+  return y;
+}
+
+function daysUntil(refDate){
+  if(!refDate) return null;
+  return Math.ceil((refDate.getTime() - Date.now()) / 86400000);
+}
+
+function fmt(refDate){
+  return refDate ? refDate.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" }) : "unknown";
+}
+
+function relaxationFor(user, policy){
+  if(!policy || !policy.relaxations || !policy.relaxations.length) return { years:0, matched:null };
+  const isScStBc = user.cat === "BC" || user.cat === "SC" || user.cat === "ST";
+  const applicable = policy.relaxations.filter(r => {
+    if (r.category === "SC/ST/BC/EWS") return isScStBc || user.cat === "EWS";
+    if (r.category === "SC/ST/BC")     return isScStBc;
+    if (r.category === "PWD")          return user.pwd === "pwd";
+    if (r.category === "EX_SERVICEMEN")return user.pwd === "exs";
+    if (r.category === "GOVT_EMPLOYEE")return user.pwd === "gov";
+    return false;
+  });
+  if(!applicable.length) return { years:0, matched:null };
+  const best = applicable.reduce((a,b) => b.years > a.years ? b : a);
+  return { years: best.years, matched: best };
+}
+
+function llmRelaxationFor(user, fb){
+  if(!fb || !fb.relaxations || !fb.relaxations.length) return { years:0, matched:null };
+  const isScStBc = user.cat === "BC" || user.cat === "SC" || user.cat === "ST";
+  const applicable = fb.relaxations.filter(r => {
+    const c = (r.category || "").toUpperCase();
+    if (isScStBc && /SC|ST|OBC|BC/.test(c)) return true;
+    if (user.cat === "EWS" && /EWS/.test(c)) return true;
+    if (user.pwd === "pwd" && /PWD|PWBD|DISAB/.test(c)) return true;
+    if (user.pwd === "exs" && /EX.?SERV/.test(c)) return true;
+    if (user.pwd === "gov" && /GOV|SERVICE\s*CAND/.test(c)) return true;
+    return false;
+  });
+  if(!applicable.length) return { years:0, matched:null };
+  const best = applicable.reduce((a,b) => (b.years||0) > (a.years||0) ? b : a);
+  return { years: best.years || 0, matched: best };
+}
+
+function llmCategoryCapFor(user, fb){
+  if(!fb || !fb.category_caps) return null;
+  const isScStBc = user.cat === "BC" || user.cat === "SC" || user.cat === "ST";
+  let best = null, generalCap = null;
+  for (const [cat, val] of Object.entries(fb.category_caps)){
+    if (val == null) continue;
+    const c = cat.toUpperCase();
+    const isGeneral = /\b(UR|GEN)\b|EWS/.test(c) && !/SC|ST|OBC|\bBC\b/.test(c);
+    if (isGeneral) generalCap = generalCap == null ? val : Math.max(generalCap, val);
+    let applies = false;
+    if (isScStBc && /SC|ST|OBC|\bBC\b/.test(c)) applies = true;
+    if (user.cat === "EWS" && /EWS/.test(c)) applies = true;
+    if (user.pwd === "pwd" && /PWD|PWBD|DISAB/.test(c)) applies = true;
+    if (user.pwd === "exs" && /EX.?SERV/.test(c)) applies = true;
+    if (applies) best = best == null ? val : Math.max(best, val);
+  }
+  if (best != null) return best;
+  return generalCap;
+}
+
+// Ceiling from the AI-only fallback: a category-cap table gives the
+// person's own absolute number directly; a single base range instead gets
+// a relaxation added on top, same shape as the deterministic reader.
+function llmEffectiveCeiling(user, fb){
+  const cap = llmCategoryCapFor(user, fb);
+  if (cap != null) return cap;
+  if (fb.max_age == null) return null;
+  return fb.max_age + llmRelaxationFor(user, fb).years;
+}
+
+function qualificationCheck(quals, user){
+  if(!quals || !quals.length)
+    return { status:"unknown", why:"Qualification requirements were not extracted for this notification yet — check the official PDF." };
+  const candRank = QUAL_RANK[user.qual] || 0;
+  const disc = (user.qdisc || "").toLowerCase().trim();
+  let bestLevelOk = false, openDiscipline = [];
+  for(const q of quals){
+    const reqRank = QUAL_RANK[q.level] || 0;
+    if(candRank < reqRank) continue;
+    bestLevelOk = true;
+    if(!q.discipline) return { status:"ok", why:`Needs ${QUAL_LABEL[q.level] || q.level} (any discipline). You qualify.` };
+    if(!disc){ openDiscipline.push(q.discipline); continue; }
+    const reqDisc = q.discipline.toLowerCase();
+    if(reqDisc.includes(disc) || disc.includes(reqDisc))
+      return { status:"ok", why:`Needs ${QUAL_LABEL[q.level] || q.level} in ${q.discipline}. You qualify.` };
+    openDiscipline.push(q.discipline);
+  }
+  if(bestLevelOk && openDiscipline.length)
+    return { status:"unknown", why:`Your qualification level is enough, but the required field of study is ${openDiscipline.join(" / ")} — enter your field above to confirm, or check the PDF.` };
+  if(!bestLevelOk){
+    const need = [...new Set(quals.map(q => QUAL_LABEL[q.level] || q.level))].join(" or ");
+    return { status:"bad", why:`Needs ${need}. You have ${QUAL_LABEL[user.qual]}.` };
+  }
+  return { status:"unknown", why:"Could not confirm your qualification match — check the official PDF." };
+}
+
+function evaluate(user, n){
+  const policy = n.age_policy || {};
+  const asOn = parseDMY(policy.as_on_date);
+  const closes = parseDMY((n.application_end || "").split(" ")[0]);
+  const left = daysUntil(closes);
+  const relax = relaxationFor(user, policy);
+
+  const blockers = [];
+  const cautions = [];
+  let age = null, ceiling = null, confidenceOverride = null;
+
+  if (left != null && left < 0) blockers.push("Applications have closed.");
+
+  const hasDeterministicAge = policy.min_age != null && asOn;
+  const fallback = n.age_policy_llm_fallback || null;
+  const fbAsOn = fallback ? parseDMY(fallback.as_on_date) : null;
+  const fbCeiling = fallback ? llmEffectiveCeiling(user, fallback) : null;
+  const hasFallbackAge = !hasDeterministicAge && fallback && fbAsOn && fbCeiling != null;
+
+  if (hasDeterministicAge){
+    age = ageOn(user.dob, asOn);
+    ceiling = policy.max_age + relax.years;
+    if (age < policy.min_age) blockers.push(`You are ${age} on ${fmt(asOn)}. Minimum is ${policy.min_age}.`);
+    else if (age > ceiling) blockers.push(`You are ${age} on ${fmt(asOn)}. Your ceiling is ${ceiling}${relax.years ? ` (${policy.max_age} plus ${relax.years} yrs relaxation)` : ""}.`);
+    if (!relax.years && (user.cat !== "OC")) cautions.push("No category relaxation was confirmed for this notification — the ceiling above may be higher once verified.");
+  } else if (hasFallbackAge){
+    age = ageOn(user.dob, fbAsOn);
+    ceiling = fbCeiling;
+    if (fallback.min_age != null && age < fallback.min_age)
+      blockers.push(`You are ${age} on ${fmt(fbAsOn)}. Minimum is ${fallback.min_age} (AI-extracted, unverified).`);
+    else if (age > ceiling)
+      blockers.push(`You are ${age} on ${fmt(fbAsOn)}. Your ceiling is ${ceiling} (AI-extracted, unverified — check the PDF).`);
+    cautions.push("This notification's age data came from the AI reader only, not the regex cross-check — verify against the official PDF before relying on it.");
+    confidenceOverride = "ai_only";
+  } else {
+    cautions.push("Age limit could not be reliably read from the PDF for this notification — check it directly.");
+  }
+
+  const qc = qualificationCheck(n.qualifications, user);
+  if (qc.status === "bad") blockers.push(qc.why); else cautions.push(qc.why);
+
+  let confidence = confidenceOverride || policy.confidence || "placeholder";
+  const llmAges = (n.age_rules_llm || []).filter(a => a.min_age != null && a.max_age != null);
+  if (!confidenceOverride && llmAges.length && policy.min_age != null){
+    const agree = llmAges.some(a => Math.abs(a.min_age - policy.min_age) <= 1 && Math.abs(a.max_age - policy.max_age) <= 1);
+    if (!agree) confidence = "contested";
+  }
+  const status = blockers.length ? "bad" : (cautions.length ? "warn" : "good");
+  return { status, blockers, cautions, age, ceiling, relax: relax.years, left, closes, confidence };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   INTERFACE
+   ═══════════════════════════════════════════════════════════════════ */
+
+const $ = id => document.getElementById(id);
+
+function showError(el, msg){ el.textContent = msg; el.classList.add("on"); }
+function clearError(el){ el.classList.remove("on"); }
+
+["dob","cat","sex","pwd","qual","qdisc","dist"].forEach(id =>
+  $(id).addEventListener("input", () => clearError($("err"))));
+$("phone").addEventListener("input", () => clearError($("perr")));
+
+async function loadNotifications(){
+  const res = await fetch(`${API_BASE}/eligibility/notifications`);
+  if(!res.ok) throw new Error(`API returned ${res.status}`);
+  return res.json();
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function card(n, r){
+  const cls = r.status === "good" ? "yes" : r.status === "bad" ? "no" : "warn";
+  const lines = r.status === "bad" ? r.blockers : [...r.cautions];
+  if (r.status === "good" && r.age != null) lines.unshift(`You are <b>${r.age}</b> on ${fmt(parseDMY(n.age_policy.as_on_date))}, against a ceiling of <b>${r.ceiling}</b>.`);
+  const pills = [];
+  if (r.closes) pills.push(`<span class="pill${r.left!=null && r.left<=14 ? " warn" : ""}">${r.left!=null ? (r.left>=0 ? r.left+" days to apply, " : "closed, ") : ""}closes ${fmt(r.closes)}</span>`);
+  if (n.department) pills.push(`<span class="pill flat">${escapeHtml(n.department)}</span>`);
+  if (n.source) pills.push(`<span class="pill flat">${escapeHtml(n.source.toUpperCase())}</span>`);
+
+  return `<div class="item ${cls}">
+    <h3>${escapeHtml(n.title || n.notification_number || "Untitled notification")}</h3>
+    <p class="board">${escapeHtml(n.notification_number || "")}</p>
+    ${lines.map(l => `<p class="why">${l}</p>`).join("")}
+    ${pills.length ? `<div class="stats">${pills.join("")}</div>` : ""}
+    <p class="conf ${r.confidence}">${CONF_LABEL[r.confidence] || ""}</p>
+    <a class="pdf" href="${escapeHtml(n.official_url)}" target="_blank" rel="noopener">View official notification →</a>
+  </div>`;
+}
+
+$("go").addEventListener("click", async () => {
+  const dob = $("dob").value;
+  if (!dob) return showError($("err"), "Enter your date of birth first.");
+  const born = new Date(dob);
+  if (isNaN(born)) return showError($("err"), "That date of birth is not valid.");
+  if (born > new Date()) return showError($("err"), "Date of birth cannot be in the future.");
+
+  clearError($("err"));
+  $("go").disabled = true; $("go").textContent = "Checking…";
+
+  const user = {
+    dob, cat: $("cat").value, sex: $("sex").value, pwd: $("pwd").value,
+    qual: $("qual").value, qdisc: $("qdisc").value, dist: $("dist").value,
+  };
+
+  try{
+    if (!NOTIFICATIONS.length) NOTIFICATIONS = await loadNotifications();
+
+    const results = NOTIFICATIONS.map(n => ({ n, r: evaluate(user, n) }))
+      .sort((a,b) => (a.r.status === "bad") - (b.r.status === "bad") || (a.r.left ?? 9e9) - (b.r.left ?? 9e9));
+
+    const win = results.filter(x => x.r.status === "good").length;
+    const maybe = results.filter(x => x.r.status === "warn").length;
+
+    $("count").innerHTML = NOTIFICATIONS.length
+      ? `${win}<small>of ${NOTIFICATIONS.length} reviewed notification${NOTIFICATIONS.length===1?"":"s"} you clearly qualify for${maybe ? `, plus ${maybe} to double-check` : ""}</small>`
+      : `0<small>reviewed notifications published yet</small>`;
+    $("agenote").textContent = NOTIFICATIONS.length
+      ? "Each card below applies that notification's own age-relaxation rules — never a shared table."
+      : "The crawler and review queue haven't published anything yet. Approve a notification via the review API or Telegram bot, then refresh.";
+
+    $("list").innerHTML =
+      (win ? `<p class="sect">You qualify for these</p>${results.filter(x=>x.r.status==="good").map(x=>card(x.n,x.r)).join("")}` : "") +
+      (maybe ? `<p class="sect">Worth a manual check</p>${results.filter(x=>x.r.status==="warn").map(x=>card(x.n,x.r)).join("")}` : "") +
+      `<p class="sect">You are blocked from these, and why</p>${results.filter(x=>x.r.status==="bad").map(x=>card(x.n,x.r)).join("") || '<p class="empty">None — nothing rules you out outright.</p>'}`;
+
+    $("out").style.display = "block";
+    $("out").scrollIntoView({ behavior:"smooth", block:"start" });
+  }catch(e){
+    showError($("err"), `Could not reach the eligibility engine at ${API_BASE || "(same origin)"} — ${e.message || e}. Add ?api=http://127.0.0.1:8000 to the URL if the server runs elsewhere.`);
+  }finally{
+    $("go").disabled = false; $("go").textContent = "Check my eligibility";
+  }
+});
+
+$("save").addEventListener("click", async () => {
+  const phone = $("phone").value.trim();
+  if (!/^[6-9]\d{9}$/.test(phone)) return showError($("perr"), "Enter a 10 digit Indian mobile number.");
+  if (!$("consent").checked) return showError($("perr"), "Please tick the consent box.");
+  clearError($("perr"));
+  $("save").disabled = true; $("save").textContent = "Saving…";
+
+  try{
+    const res = await fetch(`${API_BASE}/leads`, {
+      method: "POST", headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        whatsapp_number: "+91" + phone, district: $("dist").value || null, category: $("cat").value,
+        qualification_level: $("qual").value, qualification_discipline: $("qdisc").value || null,
+        dob: $("dob").value || null, gender: $("sex").value === "F" ? "female" : "male", consent: true,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    $("lead").innerHTML = `<h2>Saved</h2><p class="saved">We will message +91${phone} when something new opens that you qualify for.</p>`;
+  }catch(e){
+    showError($("perr"), `Could not save right now (${e.message || e}). Try again shortly.`);
+  }finally{
+    $("save").disabled = false; $("save").textContent = "Notify me";
+  }
+});
+
+(async function init(){
+  try{
+    NOTIFICATIONS = await loadNotifications();
+  }catch(e){ /* surfaced when the user actually checks */ }
+})();
+</script>
+</body>
+</html>

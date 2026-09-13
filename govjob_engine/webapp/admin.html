@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GovJob Admin</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b23; --panel2:#1c2330; --border:#2a3340;
+    --text:#e6edf3; --muted:#8b98a8; --accent:#58a6ff;
+    --good:#3fb950; --bad:#f85149; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding-block:20px}
+  .wrap{max-width:1040px;margin:0 auto;padding-inline:16px}
+  h1{font-size:1.3rem;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:.85rem;margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:800px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:.95rem;margin:0 0 12px;color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .stat-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  .stat{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;min-width:110px;flex:1}
+  .stat .n{font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:.72rem;color:var(--muted);margin-top:2px}
+  label{display:block;font-size:.78rem;color:var(--muted);margin:8px 0 4px}
+  label:first-child{margin-top:0}
+  input[type=text],input[type=number],select,textarea{
+    width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);
+    background:var(--panel2);color:var(--text);font-size:.9rem;font-family:inherit
+  }
+  textarea{font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:.8rem;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:100px}
+  .switch{display:flex;align-items:center;gap:8px;margin:10px 0}
+  .switch input{width:16px;height:16px}
+  .checks{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0}
+  .checks label{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--text);margin:0}
+  .checks input{width:15px;height:15px}
+  button{background:var(--accent);color:#04121f;border:0;border-radius:6px;padding:9px 14px;font-size:.85rem;font-weight:600;cursor:pointer}
+  button:hover{filter:brightness(1.1)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  button.danger{background:var(--bad);color:#fff}
+  button.small{padding:5px 10px;font-size:.78rem}
+  .btnrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
+  .badge.on{background:#123822;color:var(--good)}
+  .badge.off{background:#2b1414;color:var(--bad)}
+  .badge.running{background:#2b2410;color:var(--warn)}
+  .muted{color:var(--muted);font-size:.78rem}
+  .logfeed{max-height:420px;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:.76rem;line-height:1.5}
+  .logline{padding:3px 0;border-bottom:1px solid #1a212b;white-space:pre-wrap;word-break:break-word}
+  .logline .t{color:var(--muted)}
+  .logline.info .e{color:var(--accent)}
+  .logline.warning .e{color:var(--warn)}
+  .logline.error .e{color:var(--bad)}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .toolbar select{width:auto}
+  .pending-item{border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--panel2)}
+  .pending-item h4{margin:0 0 4px;font-size:.85rem}
+  .pending-item .v{font-size:.72rem;color:var(--muted);margin:0 0 6px}
+  .err{background:#2b1414;color:var(--bad);border-radius:6px;padding:8px 10px;font-size:.8rem;margin-top:8px}
+  .ok{background:#123822;color:var(--good);border-radius:6px;padding:8px 10px;font-size:.8rem;margin-top:8px}
+  .empty{color:var(--muted);font-size:.82rem;padding:10px 0}
+  .bysource{font-size:.75rem;color:var(--muted);margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GovJob Admin</h1>
+  <p class="sub">Multi-site crawl scheduling, AI web-search discovery, manual scrape, live activity log, and the review queue.</p>
+
+  <div class="stat-row" id="stats"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Site crawl <span id="schedBadge" class="badge off">off</span></h2>
+      <div class="switch"><input type="checkbox" id="schedEnabled"> <label style="margin:0" for="schedEnabled">Run automatically on a timer</label></div>
+      <label>Sites to crawl</label>
+      <div class="checks" id="sourceChecks"><span class="muted">Loading…</span></div>
+      <div class="row">
+        <div>
+          <label for="interval">Every (minutes)</label>
+          <input type="number" id="interval" min="1" value="30">
+        </div>
+        <div>
+          <label for="year">Year</label>
+          <input type="number" id="year" placeholder="e.g. 2026">
+        </div>
+        <div class="switch" style="margin-top:22px">
+          <input type="checkbox" id="allYears"> <label style="margin:0" for="allYears">All years</label>
+        </div>
+      </div>
+      <div class="btnrow">
+        <button id="saveSettings">Save schedule</button>
+        <button id="crawlNow" class="ghost">Scrape now (manual)</button>
+      </div>
+      <p class="muted" id="schedStatus" style="margin-top:10px"></p>
+      <div id="settingsMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>AI web-search discovery <span id="wdBadge" class="badge off">off</span></h2>
+      <p class="muted">Beyond the fixed sites above — Claude searches the open web for fresh notifications (covers boards whose listing pages are JS-only, like SSC/RRB). Costs more per run than a site crawl; off by default and gated by <code>WEB_DISCOVERY_ENABLED</code> in <code>.env</code>.</p>
+      <p class="muted" style="color:var(--warn)">~$0.03–0.08 per query in real API cost (Haiku 4.5, measured live) — each query in the box below spends real money when you click "Search now" or when the schedule fires. The site crawl above is free.</p>
+      <div class="switch"><input type="checkbox" id="wdEnabled"> <label style="margin:0" for="wdEnabled">Run automatically on a timer</label></div>
+      <label for="wdInterval">Every (hours)</label>
+      <input type="number" id="wdInterval" min="1" value="6">
+      <label for="wdQueries">Search queries (one per line)</label>
+      <textarea id="wdQueries" rows="4"></textarea>
+      <div class="btnrow">
+        <button id="wdSave">Save</button>
+        <button id="wdRunNow" class="ghost">Search now (manual)</button>
+      </div>
+      <p class="muted" id="wdStatus" style="margin-top:10px"></p>
+      <div id="wdMsg"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>System</h2>
+    <div class="row">
+      <div><p class="muted">LLM (Haiku 4.5): <span id="llmStatus"></span></p></div>
+      <div><p class="muted">Telegram bot: <span id="tgStatus"></span></p></div>
+      <div><p class="muted">Web discovery: <span id="wdSystemStatus"></span></p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Review queue <span class="badge off" id="pendingBadge">0 pending</span></h2>
+    <div id="pendingList"><p class="empty">Loading…</p></div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0;flex:1">Live activity log</h2>
+      <select id="filterType">
+        <option value="">All events</option>
+        <option value="crawl_started">crawl_started</option>
+        <option value="crawl_discovered">crawl_discovered</option>
+        <option value="document_downloaded">document_downloaded</option>
+        <option value="document_processed">document_processed</option>
+        <option value="document_unchanged">document_unchanged</option>
+        <option value="document_error">document_error</option>
+        <option value="llm_call">llm_call</option>
+        <option value="llm_call_failed">llm_call_failed</option>
+        <option value="web_search_query">web_search_query</option>
+        <option value="web_discovery_budget_stop">web_discovery_budget_stop</option>
+        <option value="review_queued">review_queued</option>
+        <option value="review_decision">review_decision</option>
+        <option value="telegram_card_sent">telegram_card_sent</option>
+        <option value="lead_captured">lead_captured</option>
+        <option value="crawl_finished">crawl_finished</option>
+        <option value="crawl_failed">crawl_failed</option>
+      </select>
+      <label class="switch" style="margin:0"><input type="checkbox" id="autoRefresh" checked> auto-refresh</label>
+      <button class="ghost small" id="refreshLogs">Refresh</button>
+    </div>
+    <div class="logfeed" id="logfeed"><p class="empty">Loading…</p></div>
+  </div>
+</div>
+
+<script>
+const DEFAULT_API = (location.protocol.startsWith('http') && location.port !== '') ? '' : 'http://127.0.0.1:8000';
+const API_BASE = new URLSearchParams(location.search).get('api') || localStorage.getItem('govjob_api_base') || DEFAULT_API;
+if (new URLSearchParams(location.search).get('api')) localStorage.setItem('govjob_api_base', API_BASE);
+
+const $ = id => document.getElementById(id);
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtTime(iso){ try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
+
+async function api(path, opts){
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  if(!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+let settingsLoaded = false;
+let sourcesLoaded = false;
+
+async function loadSources(){
+  const sources = await api('/admin/sources');
+  const cfg = await api('/admin/settings');
+  $('sourceChecks').innerHTML = sources.map(s =>
+    `<label><input type="checkbox" data-source="${s.key}"> ${escapeHtml(s.name)} (${s.key})</label>`
+  ).join('');
+  $('sourceChecks').querySelectorAll('input[data-source]').forEach(cb => {
+    cb.checked = (cfg.crawl_sources || []).includes(cb.dataset.source);
+  });
+  sourcesLoaded = true;
+}
+
+async function loadStatus(){
+  const s = await api('/admin/status');
+  const c = s.counts;
+  const bySource = Object.entries(c.notifications_by_source || {}).map(([k,v]) => `${k}: ${v}`).join(', ');
+  $('stats').innerHTML = [
+    ['Notifications', c.notifications_total],
+    ['Pending review', c.pending_review],
+    ['Approved', c.approved],
+    ['Rejected', c.rejected],
+    ['Leads', c.leads_total],
+    ['LLM spend', `$${s.llm_spend_usd_this_month.toFixed(2)} / $${s.llm_monthly_cap_usd.toFixed(2)}`],
+    ['Search spend', `$${s.web_discovery_spend_usd_this_month.toFixed(2)} / $${s.web_discovery_monthly_cap_usd.toFixed(2)}`],
+  ].map(([l,n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('')
+   + (bySource ? `<div class="bysource" style="flex-basis:100%">By source: ${escapeHtml(bySource)}</div>` : '');
+
+  $('llmStatus').innerHTML = s.llm_enabled ? '<span class="badge on">on</span>' : '<span class="badge off">off — deterministic only</span>';
+  $('tgStatus').innerHTML = s.telegram_enabled ? '<span class="badge on">on</span>' : '<span class="badge off">off — approve via API/admin</span>';
+  $('wdSystemStatus').innerHTML = s.web_discovery_enabled ? '<span class="badge on">enabled in .env</span>' : '<span class="badge off">WEB_DISCOVERY_ENABLED=false in .env</span>';
+
+  const crawl = s.scheduler.crawl;
+  $('schedBadge').textContent = crawl.is_running ? 'running now' : (s.scheduler.scheduler_enabled ? 'on' : 'off');
+  $('schedBadge').className = 'badge ' + (crawl.is_running ? 'running' : (s.scheduler.scheduler_enabled ? 'on' : 'off'));
+  $('schedStatus').textContent = crawl.last_run_finished
+    ? `Last run: ${fmtTime(crawl.last_run_finished)} — ${JSON.stringify(crawl.last_run_summary)}${crawl.last_run_error ? ' (error: ' + crawl.last_run_error + ')' : ''}`
+    : 'No crawl has run yet.';
+  if (s.scheduler.next_scheduled_at) $('schedStatus').textContent += ` — next: ${fmtTime(s.scheduler.next_scheduled_at)}`;
+  $('crawlNow').disabled = !!crawl.is_running;
+  $('crawlNow').textContent = crawl.is_running ? 'Scraping…' : 'Scrape now (manual)';
+
+  const wd = s.scheduler.web_discovery;
+  $('wdBadge').textContent = wd.is_running ? 'running now' : (s.scheduler.web_discovery_scheduler_enabled ? 'on' : 'off');
+  $('wdBadge').className = 'badge ' + (wd.is_running ? 'running' : (s.scheduler.web_discovery_scheduler_enabled ? 'on' : 'off'));
+  $('wdStatus').textContent = wd.last_run_finished
+    ? `Last run: ${fmtTime(wd.last_run_finished)} — ${JSON.stringify(wd.last_run_summary)}${wd.last_run_error ? ' (error: ' + wd.last_run_error + ')' : ''}`
+    : 'No search run yet.';
+  $('wdRunNow').disabled = !!wd.is_running || !s.web_discovery_enabled;
+
+  if (!settingsLoaded){
+    $('schedEnabled').checked = s.scheduler.scheduler_enabled;
+    $('interval').value = Math.round(s.scheduler.crawl_interval_seconds / 60);
+    $('year').value = s.scheduler.crawl_year ?? '';
+    $('allYears').checked = s.scheduler.crawl_all_years;
+    $('wdEnabled').checked = s.scheduler.web_discovery_scheduler_enabled;
+    $('wdInterval').value = Math.round(s.scheduler.web_discovery_interval_seconds / 3600);
+    $('wdQueries').value = (s.scheduler.web_discovery_queries || []).join('\n');
+    settingsLoaded = true;
+  }
+}
+
+async function loadPending(){
+  const rows = await api('/review/pending');
+  $('pendingBadge').textContent = `${rows.length} pending`;
+  $('pendingBadge').className = 'badge ' + (rows.length ? 'running' : 'off');
+  $('pendingList').innerHTML = rows.length ? rows.map(r => `
+    <div class="pending-item" data-id="${r.document_version_id}">
+      <h4>${escapeHtml(r.notification_number || '')} — ${escapeHtml((r.title||'').slice(0,90))}</h4>
+      <p class="v">Verdict: ${escapeHtml(r.verdict.verdict || '?')} — ${escapeHtml((r.verdict.reasons||[]).join('; '))}</p>
+      <div class="btnrow">
+        <button class="small approve">Approve</button>
+        <button class="small danger reject">Reject</button>
+      </div>
+    </div>`).join('') : '<p class="empty">Nothing waiting — the queue is empty.</p>';
+
+  $('pendingList').querySelectorAll('.approve').forEach(btn => btn.addEventListener('click', async (e) => {
+    const id = e.target.closest('.pending-item').dataset.id;
+    e.target.disabled = true;
+    await api(`/review/${id}/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({decided_by:'admin-ui'}) });
+    loadPending(); loadStatus();
+  }));
+  $('pendingList').querySelectorAll('.reject').forEach(btn => btn.addEventListener('click', async (e) => {
+    const id = e.target.closest('.pending-item').dataset.id;
+    e.target.disabled = true;
+    await api(`/review/${id}/reject`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({decided_by:'admin-ui'}) });
+    loadPending(); loadStatus();
+  }));
+}
+
+async function loadLogs(){
+  const type = $('filterType').value;
+  const rows = await api(`/admin/logs?limit=200${type ? '&event_type='+encodeURIComponent(type) : ''}`);
+  $('logfeed').innerHTML = rows.length ? rows.map(r =>
+    `<div class="logline ${r.level}"><span class="t">${fmtTime(r.created_at)}</span> <span class="e">[${r.event_type}]</span> ${escapeHtml(r.message)}</div>`
+  ).join('') : '<p class="empty">No events yet.</p>';
+}
+
+$('saveSettings').addEventListener('click', async () => {
+  const msg = $('settingsMsg');
+  msg.innerHTML = '';
+  const sources = [...$('sourceChecks').querySelectorAll('input[data-source]:checked')].map(cb => cb.dataset.source);
+  try{
+    await api('/admin/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        scheduler_enabled: $('schedEnabled').checked,
+        crawl_interval_seconds: Math.max(1, parseInt($('interval').value || '30', 10)) * 60,
+        crawl_sources: sources,
+        crawl_year: $('year').value ? parseInt($('year').value, 10) : null,
+        crawl_all_years: $('allYears').checked,
+      }),
+    });
+    msg.innerHTML = '<div class="ok">Saved.</div>';
+    loadStatus();
+  }catch(e){ msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
+});
+
+$('crawlNow').addEventListener('click', async () => {
+  $('crawlNow').disabled = true;
+  const sources = [...$('sourceChecks').querySelectorAll('input[data-source]:checked')].map(cb => cb.dataset.source);
+  try{ await api('/admin/crawl-now', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sources}) }); }
+  catch(e){ $('settingsMsg').innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
+  loadStatus();
+});
+
+$('wdSave').addEventListener('click', async () => {
+  const msg = $('wdMsg');
+  msg.innerHTML = '';
+  const queries = $('wdQueries').value.split('\n').map(s => s.trim()).filter(Boolean);
+  try{
+    await api('/admin/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        web_discovery_scheduler_enabled: $('wdEnabled').checked,
+        web_discovery_interval_seconds: Math.max(1, parseInt($('wdInterval').value || '6', 10)) * 3600,
+        web_discovery_queries: queries,
+      }),
+    });
+    msg.innerHTML = '<div class="ok">Saved.</div>';
+    loadStatus();
+  }catch(e){ msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
+});
+
+$('wdRunNow').addEventListener('click', async () => {
+  const n = $('wdQueries').value.split('\n').map(s => s.trim()).filter(Boolean).length;
+  if (!confirm(`This runs ${n} search quer${n===1?'y':'ies'} against the live Anthropic API — real money, roughly $${(n*0.03).toFixed(2)}-$${(n*0.08).toFixed(2)} total. Continue?`)) return;
+  $('wdRunNow').disabled = true;
+  try{ await api('/admin/web-discovery/run', { method:'POST' }); }
+  catch(e){ $('wdMsg').innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
+  loadStatus();
+});
+
+$('refreshLogs').addEventListener('click', loadLogs);
+$('filterType').addEventListener('change', loadLogs);
+
+async function tick(){
+  try{
+    if (!sourcesLoaded) await loadSources();
+    await Promise.all([loadStatus(), loadPending()]);
+  }catch(e){}
+  if ($('autoRefresh').checked){ try{ await loadLogs(); }catch(e){} }
+}
+tick();
+setInterval(tick, 4000);
+</script>
+</body>
+</html>
